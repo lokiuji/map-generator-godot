@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="BiomeData" format=3 uid="uid://v8a3saje32es"]
+
+[ext_resource type="Script" uid="uid://dac35w7mqoruo" path="res://biom_data.gd" id="1_clkym"]
+[ext_resource type="PackedScene" uid="uid://fpk1mv3jix7x" path="res://Assets/QuaterniusNature/glTF/Plant_1.gltf" id="1_gwt7y"]
+[ext_resource type="PackedScene" uid="uid://drd0pt7c2kdoq" path="res://Assets/QuaterniusNature/glTF/Grass_Wispy_Short.gltf" id="2_so5hc"]
+
+[resource]
+script = ExtResource("1_clkym")
+biome_name = "Пустеля"
+temperature_range = Vector2(0.7, 1)
+moisture_range = Vector2(0, 0.3)
+height_multiplier = 0.2
+grass_density = 100
+flower_density = 0
+tree_density = 1
+ground_color_main = Color(0.5572955, 0.46157044, 0.071151696, 1)
+ground_color_accent = Color(0.66800547, 0.5876366, 0.27703643, 1)
+grass_color_top = Color(0.846278, 0.72231704, 0.4097589, 1)
+grass_color_bottom = Color(1, 0.8117647, 0.28627452, 1)
+grass_scenes = Array[PackedScene]([ExtResource("2_so5hc")])
+flower_scenes = Array[PackedScene]([ExtResource("1_gwt7y")])
+grass_chance = 0.1
+mushroom_chance = 0.0
+tree_chance = 0.005
+metadata/_custom_type_script = "uid://dac35w7mqoruo"

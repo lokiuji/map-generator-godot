@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://dnryodo5usq57"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_noarx"]
+size = Vector2(120, 120)
+subdivide_width = 120
+subdivide_depth = 120
+
+[node name="WaterChunk" type="MeshInstance3D" unique_id=2089562965]
+mesh = SubResource("PlaneMesh_noarx")

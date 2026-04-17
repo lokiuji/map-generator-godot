@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="BiomeData" format=3 uid="uid://c0pqla06o6g62"]
+
+[ext_resource type="Script" uid="uid://dac35w7mqoruo" path="res://biom_data.gd" id="1_c0piy"]
+[ext_resource type="PackedScene" uid="uid://dg2sfnuf0c23f" path="res://Assets/QuaterniusNature/glTF/Flower_4_Group.gltf" id="1_mq1od"]
+[ext_resource type="PackedScene" uid="uid://bbfkiqc0uqfh8" path="res://Assets/QuaterniusNature/glTF/Plant_7_Big.gltf" id="2_mlmqw"]
+[ext_resource type="PackedScene" uid="uid://brnfdbyv0mocd" path="res://Assets/QuaterniusNature/glTF/Petal_3.gltf" id="3_3j5hd"]
+[ext_resource type="PackedScene" uid="uid://r4fkjb05ikkd" path="res://Assets/QuaterniusNature/glTF/Bush_Common.gltf" id="4_v1l6m"]
+[ext_resource type="PackedScene" uid="uid://bk1mqx2lh084c" path="res://Assets/QuaterniusNature/glTF/Grass_Common_Short.gltf" id="5_nmc8p"]
+[ext_resource type="PackedScene" uid="uid://wth2helmslt1" path="res://Assets/QuaterniusNature/glTF/Grass_Common_Tall.gltf" id="6_jukfr"]
+[ext_resource type="PackedScene" uid="uid://bv72yhva3axw4" path="res://Assets/QuaterniusNature/glTF/Fern_1.gltf" id="7_5cda8"]
+[ext_resource type="PackedScene" uid="uid://wo0na8dy8cdx" path="res://Assets/QuaterniusNature/glTF/Bush_Common_Flowers.gltf" id="8_26itr"]
+[ext_resource type="PackedScene" uid="uid://c2ut84enlr4cv" path="res://Assets/QuaterniusNature/glTF/Mushroom_Common.gltf" id="9_cdxef"]
+[ext_resource type="PackedScene" uid="uid://dypnclxvajq3b" path="res://Assets/QuaterniusNature/glTF/Rock_Medium_1.gltf" id="10_jtp4v"]
+
+[resource]
+script = ExtResource("1_c0piy")
+biome_name = "Ліс"
+temperature_range = Vector2(0.3, 0.7)
+moisture_range = Vector2(0.4, 1)
+tree_density = 150
+grass_scenes = Array[PackedScene]([ExtResource("5_nmc8p"), ExtResource("6_jukfr"), ExtResource("7_5cda8"), ExtResource("8_26itr")])
+flower_scenes = Array[PackedScene]([ExtResource("1_mq1od"), ExtResource("2_mlmqw"), ExtResource("3_3j5hd"), ExtResource("4_v1l6m")])
+mushroom_scenes = Array[PackedScene]([ExtResource("9_cdxef"), ExtResource("10_jtp4v")])
+grass_chance = 0.6
+mushroom_chance = 0.01
+tree_chance = 0.1
+metadata/_custom_type_script = "uid://dac35w7mqoruo"
