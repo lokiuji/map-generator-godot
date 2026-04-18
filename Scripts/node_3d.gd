@@ -3,13 +3,14 @@ extends Node3D
 var chunk_scene = preload("res://world_chunk.tscn")
 
 const CHUNK_SIZE = 120.0
-const RENDER_DISTANCE = 4 
+const RENDER_DISTANCE = 4
 const HEIGHT_SCALE = 150.0
 const WATER_LEVEL = -20.0
 
 @export var biomes: Array[BiomeData]
 @export var leaf_texture: Texture2D 
 @export var grass_texture: Texture2D 
+@export var billboard_tree_texture: Texture2D
 
 var height_noise = FastNoiseLite.new()
 var temperature_noise = FastNoiseLite.new()
@@ -25,7 +26,7 @@ var shared_terrain_material: ShaderMaterial
 
 var biome_meshes = {} 
 var procedural_tree_mesh: ArrayMesh
-var shared_low_poly_tree: CylinderMesh # СПІЛЬНИЙ МЕШ ДЛЯ LOD (Рятує FPS!)
+var shared_low_poly_tree: QuadMesh
 
 var biome_dropdown: OptionButton
 
@@ -70,16 +71,32 @@ func _process(_delta):
 # РОЗПАКОВКА ТА ГЕНЕРАЦІЯ МЕШІВ
 # ==========================================
 func _create_shared_lod_mesh():
-	shared_low_poly_tree = CylinderMesh.new()
-	shared_low_poly_tree.radial_segments = 4 # Дуже низькополігонально
-	shared_low_poly_tree.rings = 1
-	shared_low_poly_tree.bottom_radius = 0.5
-	shared_low_poly_tree.top_radius = 0.0 # Робимо конус
-	shared_low_poly_tree.height = 8.0
-	var mat = StandardMaterial3D.new()
-	mat.albedo_color = Color(0.2, 0.4, 0.2) # Темно-зелений колір
-	shared_low_poly_tree.material = mat
+	shared_low_poly_tree = QuadMesh.new()
+	shared_low_poly_tree.size = Vector2(12.0, 16.0) # Оптимальний розмір
+	shared_low_poly_tree.center_offset = Vector3(0, 8.0, 0) 
 
+	var mat = StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR # Scissor - найшвидший
+	mat.alpha_scissor_threshold = 0.5
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_OPAQUE_ONLY # ВИПРАВЛЯЄ ПРОСВІЧУВАННЯ
+	
+	if billboard_tree_texture:
+		mat.albedo_texture = billboard_tree_texture
+	
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
+	mat.billboard_keep_scale = true
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX # Рятує FPS на слабких картах
+	
+	shared_low_poly_tree.material = mat
+		
+	# НОВЕ: Дерево завжди стоїть рівно відносно землі, повертається тільки по осі Y!
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y 
+	mat.billboard_keep_scale = true 
+	mat.roughness = 1.0 
+	mat.specular = 0.0
+
+	shared_low_poly_tree.material = mat
+	
 func _setup_biome_meshes():
 	for b in biomes:
 		if b == null: continue
@@ -249,61 +266,78 @@ func _build_chunk_data(chunk_pos: Vector2, resolution: int) -> Dictionary:
 
 	st.generate_normals()
 
-	# --- ОПТИМІЗОВАНА ЛОГІКА СПАВНУ РОСЛИН ---
-	if resolution >= 16: 
-		var tree_count = 0 # <--- ДОДАЄМО ЛІЧИЛЬНИК ДЕРЕВ
-		
-		for i in range(5000): 
-			var lx = randf_range(0, CHUNK_SIZE)
-			var lz = randf_range(0, CHUNK_SIZE)
-			var gx = offset_x + lx
-			var gz = offset_z + lz
-			var raw_py = height_noise.get_noise_2d(gx, gz) * HEIGHT_SCALE
-			
-			var blended_data = get_blended_biome_data(gx, gz, raw_py)
-			var exact_py = raw_py * blended_data.h_mult
-			var b_data = get_biome_at(gx, gz, raw_py)
-			
-			if b_data != null:
-				if exact_py > WATER_LEVEL + 3.0 and exact_py < HEIGHT_SCALE * 0.7:
-					var pos = Vector3(gx, exact_py, gz)
-					var r = randf()
-					var target_type = ""
-					var scale = 1.0
-					var y_offset = 0.0
-					
-					if r < b_data.grass_chance:
-						target_type = "grass"
-						scale = randf_range(2.0, 3.5) 
-					elif r < b_data.grass_chance + b_data.flower_chance:
-						target_type = "flowers"
-						scale = randf_range(1.5, 2.0)
-					elif r < b_data.grass_chance + b_data.flower_chance + b_data.mushroom_chance:
-						target_type = "mushrooms"
-						scale = randf_range(1.5, 2.5)
-					elif r < b_data.grass_chance + b_data.flower_chance + b_data.mushroom_chance + b_data.tree_chance:
-						# --- ЖОРСТКИЙ ЛІМІТ ДЕРЕВ ---
-						if tree_count >= 35: # Максимум 35 дерев на чанк!
-							continue
-						tree_count += 1
-						# ----------------------------
-						target_type = "trees"
-						scale = randf_range(0.8, 1.4)
-						y_offset = -0.2
-						
-					if target_type != "":
-						var available_meshes = biome_meshes[b_data.biome_name][target_type]
-						if available_meshes.size() > 0:
-							var selected_mesh = available_meshes[randi() % available_meshes.size()]
-							
-							if not veg_transforms.has(selected_mesh):
-								veg_transforms[selected_mesh] = []
-								veg_types[selected_mesh] = target_type
-								
-							var basis = Basis().rotated(Vector3.UP, randf() * TAU)
-							basis = basis.scaled(Vector3(scale, scale, scale))
-							veg_transforms[selected_mesh].append(Transform3D(basis, pos + Vector3(0, y_offset, 0)))
+	st.generate_normals()
 
+	# --- ФІКС ТЕЛЕПОРТАЦІЇ: Локальний рандом для чанка ---
+	var chunk_rng = RandomNumberGenerator.new()
+	chunk_rng.seed = hash(str(chunk_pos)) # Дерева тепер назавжди прив'язані до координат!
+
+	# --- РОЗУМНА ЛОГІКА СПАВНУ ТА LOD ---
+	var is_distant = resolution < 32 # Тільки найближчий чанк (res 32) має 3D дерева
+	var spawn_attempts = 100 if is_distant else 2000 # Різко зменшуємо кількість спроб для дальніх
+	var max_trees = 25 if is_distant else 35 # Далеко ліс трохи рідший для оптимізації
+	
+	var tree_count = 0
+	
+	for i in range(spawn_attempts): 
+		# ВИКОРИСТОВУЄМО chunk_rng ЗАМІСТЬ randf() !!!
+		var lx = chunk_rng.randf_range(0, CHUNK_SIZE)
+		var lz = chunk_rng.randf_range(0, CHUNK_SIZE)
+		var gx = offset_x + lx
+		var gz = offset_z + lz
+		var raw_py = height_noise.get_noise_2d(gx, gz) * HEIGHT_SCALE
+		
+		var blended_data = get_blended_biome_data(gx, gz, raw_py)
+		var exact_py = raw_py * blended_data.h_mult
+		var b_data = get_biome_at(gx, gz, raw_py)
+		
+		if b_data != null:
+			if exact_py > WATER_LEVEL + 3.0 and exact_py < HEIGHT_SCALE * 0.7:
+				var pos = Vector3(gx, exact_py, gz)
+				var r = chunk_rng.randf()
+				var target_type = ""
+				var scale = 1.0
+				var y_offset = 0.0
+				
+				# Трава і квіти НЕ спавняться на дальніх чанках взагалі
+				if r < b_data.grass_chance and not is_distant:
+					target_type = "grass"
+					scale = chunk_rng.randf_range(0.8, 1.4) 
+				elif r < b_data.grass_chance + b_data.flower_chance and not is_distant:
+					target_type = "flowers"
+					scale = chunk_rng.randf_range(1.5, 2.0)
+				elif r < b_data.grass_chance + b_data.flower_chance + b_data.mushroom_chance and not is_distant:
+					target_type = "mushrooms"
+					scale = chunk_rng.randf_range(1.5, 2.5)
+				elif r < b_data.grass_chance + b_data.flower_chance + b_data.mushroom_chance + b_data.tree_chance:
+					if tree_count >= max_trees: 
+						continue
+					tree_count += 1
+					target_type = "trees"
+					scale = chunk_rng.randf_range(0.8, 1.4)
+					y_offset = -0.2
+					
+				if target_type != "":
+					var available_meshes = biome_meshes[b_data.biome_name][target_type]
+					if available_meshes.size() > 0:
+						var selected_mesh = available_meshes[chunk_rng.randi() % available_meshes.size()]
+						
+						# --- СУПЕР ФІКС FPS ---
+						# Якщо це дальній чанк, ми підміняємо важку 3D-модель на нашу 2D-площину!
+						# Відеокарта більше не буде вантажити справжні дерева на горизонті.
+						if is_distant and target_type == "trees":
+							selected_mesh = shared_low_poly_tree
+						# ----------------------
+						
+						if not veg_transforms.has(selected_mesh):
+							veg_transforms[selected_mesh] = []
+							veg_types[selected_mesh] = target_type
+							
+						var basis = Basis().rotated(Vector3.UP, chunk_rng.randf() * TAU)
+						basis = basis.scaled(Vector3(scale, scale, scale))
+						veg_transforms[selected_mesh].append(Transform3D(basis, pos + Vector3(0, y_offset, 0)))
+		
+	return {"mesh": st.commit(), "needs_water": has_low_land, "v_trans": veg_transforms, "v_types": veg_types}
 	return {"mesh": st.commit(), "needs_water": has_low_land, "v_trans": veg_transforms, "v_types": veg_types}
 
 func _on_chunk_generated(chunk_pos: Vector2, data: Dictionary, res: int, col: bool):
@@ -323,7 +357,18 @@ func _spawn_chunk_in_world(chunk_pos: Vector2, data: Dictionary, res: int, col: 
 	chunk_instance.build_from_data(chunk_pos, res, col, data, shared_terrain_material, shared_water_material, shared_low_poly_tree)
 
 	active_chunks[chunk_pos] = {"node": chunk_instance, "res": res}
+	chunk_instance.build_from_data(chunk_pos, res, col, data, shared_terrain_material, shared_water_material, shared_low_poly_tree)
 
+	active_chunks[chunk_pos] = {"node": chunk_instance, "res": res}
+
+	# --- РОЗМОРОЗКА ЗАТРИМКОЮ ---
+	if chunk_pos == current_player_chunk and col and has_node("Player"):
+		# Чекаємо 2 кадри, щоб колізія точно "встала" в пам'ять
+		await get_tree().process_frame
+		await get_tree().process_frame
+		$Player.process_mode = Node.PROCESS_MODE_INHERIT
+		# Якщо в тебе в player.gd є змінна velocity, скинь її в нуль:
+		if "velocity" in $Player: $Player.velocity = Vector3.ZERO
 # ==========================================
 # БІОМИ, UI ТА МАТЕРІАЛИ (Без змін)
 # ==========================================
@@ -373,10 +418,6 @@ func get_blended_biome_data(x: float, z: float, h: float) -> Dictionary:
 	return {"h_mult": blended_h_mult / total_weight, "color": blended_color / total_weight}
 
 func find_spawn_point(target_biome: BiomeData) -> Vector3:
-	if target_biome == null:
-		var center_h = height_noise.get_noise_2d(0, 0) * HEIGHT_SCALE
-		return Vector3(0, max(center_h, WATER_LEVEL) + 5.0, 0)
-		
 	var radius = 0.0
 	for i in range(3000):
 		var angle = randf() * TAU
@@ -384,15 +425,18 @@ func find_spawn_point(target_biome: BiomeData) -> Vector3:
 		var rz = sin(angle) * radius
 		radius += 15.0 
 		
-		var h = height_noise.get_noise_2d(rx, rz) * HEIGHT_SCALE
-		var found_biome = get_biome_at(rx, rz, h)
+		var raw_h = height_noise.get_noise_2d(rx, rz) * HEIGHT_SCALE
+		var b_data = get_biome_at(rx, rz, raw_h)
 		
-		if found_biome == target_biome:
-			var spawn_y = max(h, WATER_LEVEL + target_biome.water_level_offset) + 5.0
+		if b_data == target_biome or target_biome == null:
+			# ВАЖЛИВО: Отримуємо реальну висоту з урахуванням множника біома
+			var blended = get_blended_biome_data(rx, rz, raw_h)
+			var real_y = raw_h * blended.h_mult
+			
+			var spawn_y = max(real_y, WATER_LEVEL) + 2.0 # +2 метри для безпеки
 			return Vector3(rx, spawn_y, rz)
 			
-	var fallback_h = height_noise.get_noise_2d(0, 0) * HEIGHT_SCALE
-	return Vector3(0, max(fallback_h, WATER_LEVEL) + 5.0, 0)
+	return Vector3(0, 50, 0) # Фоллбек
 
 func _create_biome_ui():
 	var canvas = CanvasLayer.new()
@@ -418,8 +462,12 @@ func _on_teleport_pressed():
 	var target = biomes[biome_dropdown.selected]
 	var spawn_pos = find_spawn_point(target)
 
-	if has_node("Player"): $Player.global_position = spawn_pos
-
+	if has_node("Player"): 
+		$Player.global_position = spawn_pos
+		$Player.process_mode = Node.PROCESS_MODE_DISABLED # Заморозка при телепорті
+	
+	current_player_chunk = Vector2(floor(spawn_pos.x / CHUNK_SIZE), floor(spawn_pos.z / CHUNK_SIZE))
+	update_chunks(current_player_chunk)
 	for c in active_chunks.values(): c.node.queue_free()
 	active_chunks.clear()
 	loading_chunks.clear()
@@ -450,7 +498,7 @@ func _setup_materials():
 		float detail = is_sand ? mix(0.92, 1.08, noise) : mix(0.98, 1.02, noise);
 		float lod_factor = 1.0 - smoothstep(30.0, 100.0, dist);
 		ALBEDO = base_color * mix(1.0, detail, lod_factor);
-		ROUGHNESS = is_sand ? 0.85 : 0.95; 
+		ROUGHNESS = is_sand ? 0.85 : 0.95; 		
 		SPECULAR = 0.0; 
 	}
 	"""

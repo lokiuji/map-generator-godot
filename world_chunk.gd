@@ -48,21 +48,32 @@ func build_from_data(pos: Vector2, res: int, col: bool, data: Dictionary, terrai
 				mm.set_instance_transform(i, transforms[i])
 			mmi.multimesh = mm
 			
+			# БЛОК 1: Видимість трави
 			if type == "grass" or type == "flowers" or type == "mushrooms":
-				mmi.visibility_range_end = 60.0 
-				mmi.visibility_range_end_margin = 5.0
+				mmi.visibility_range_end = 80.0 # Трава зникає трохи далі
+				mmi.visibility_range_end_margin = 15.0 # Плавне розчинення (Cross-fade)
 				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF 
 				
+			# БЛОК 2: Видимість детальних дерев
 			elif type == "trees":
-				mmi.visibility_range_end = 70.0 
-				mmi.visibility_range_end_margin = 10.0
-				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-				_add_low_poly_trees(transforms, shared_low_poly_tree) # Викликаємо LOD
-				
-			mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+				if mesh == shared_low_poly_tree:
+					# ЦЕ ДАЛЬНІЙ ЧАНК (ВЖЕ БІЛБОРДИ) - Ультра-швидкий рендер
+					mmi.visibility_range_begin = 0.0
+					mmi.visibility_range_end = 800.0
+					mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+					# ВИМИКАЄМО FADE - Це фіксить баг з прозорістю і рятує FPS!
+					mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+				else:
+					# ЦЕ БЛИЖНІЙ ЧАНК (СПРАВЖНІ 3D ДЕРЕВА)
+					mmi.visibility_range_end = 120.0 
+					mmi.visibility_range_end_margin = 15.0
+					mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+					mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+					_add_low_poly_trees(transforms, shared_low_poly_tree)
+					
 			add_child(mmi)
 
-# Логіка спрощених дерев тепер живе тут
+# Логіка спрощених дерев
 func _add_low_poly_trees(transforms: Array, shared_low_poly_tree: Mesh):
 	var mmi_low = MultiMeshInstance3D.new()
 	var mm_low = MultiMesh.new()
@@ -74,10 +85,11 @@ func _add_low_poly_trees(transforms: Array, shared_low_poly_tree: Mesh):
 		mm_low.set_instance_transform(i, transforms[i])
 	
 	mmi_low.multimesh = mm_low
-	mmi_low.visibility_range_begin = 70.0 
-	mmi_low.visibility_range_begin_margin = 10.0
-	mmi_low.visibility_range_end = 350.0 
-	mmi_low.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	mmi_low.visibility_range_begin = 120.0 
+	mmi_low.visibility_range_begin_margin = 15.0
+	mmi_low.visibility_range_end = 800.0 
+	# ТАКОЖ ВИМИКАЄМО FADE ТУТ
+	mmi_low.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED 
 	mmi_low.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF 
 	
 	add_child(mmi_low)

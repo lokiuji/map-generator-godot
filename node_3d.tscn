@@ -6,7 +6,9 @@
 [ext_resource type="Resource" uid="uid://dgm7x4m2v6w5j" path="res://Biomes/swamp.tres" id="4_jsk3o"]
 [ext_resource type="Resource" uid="uid://v8a3saje32es" path="res://Biomes/desert.tres" id="5_4arys"]
 [ext_resource type="Resource" uid="uid://c0pqla06o6g62" path="res://Biomes/plains.tres" id="6_6iypd"]
+[ext_resource type="Texture2D" uid="uid://brvpjwe5g7igr" path="res://Textures/grass_texture.png" id="7_4arys"]
 [ext_resource type="Texture2D" uid="uid://5rmpxumbmtad" path="res://Textures/leaf_texture.png" id="8_6iypd"]
+[ext_resource type="Texture2D" uid="uid://b6abxj30tg3gq" path="res://Textures/tree_billboard.png" id="8_tereu"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_noarx"]
 sky_top_color = Color(0.28338894, 0.58678764, 0.92809415, 1)
@@ -34,6 +36,8 @@ transform = Transform3D(0.9999619, -0.00012184146, 0.008725685, 0, 0.99990255, 0
 script = ExtResource("1_a202f")
 biomes = Array[ExtResource("3_wc5p8")]([ExtResource("4_jsk3o"), ExtResource("5_4arys"), ExtResource("6_6iypd")])
 leaf_texture = ExtResource("8_6iypd")
+grass_texture = ExtResource("7_4arys")
+billboard_tree_texture = ExtResource("8_tereu")
 
 [node name="Player" parent="." unique_id=2116405228 instance=ExtResource("2_noarx")]
 
