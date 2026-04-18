@@ -19,6 +19,7 @@ grass_color_bottom = Color(0.34458098, 0.35135186, 0.0039410423, 1)
 grass_scenes = Array[PackedScene]([ExtResource("2_gybrg"), ExtResource("3_v3x0e")])
 flower_scenes = Array[PackedScene]([ExtResource("1_4mdpf")])
 mushroom_scenes = Array[PackedScene]([ExtResource("4_812lg")])
+use_procedural_tree = true
 grass_chance = 0.5
 mushroom_chance = 0.08
 tree_chance = 0.15

@@ -1,5 +1,7 @@
 extends Node3D
 
+var chunk_scene = preload("res://world_chunk.tscn")
+
 const CHUNK_SIZE = 120.0
 const RENDER_DISTANCE = 4 
 const HEIGHT_SCALE = 150.0
@@ -315,80 +317,12 @@ func _spawn_chunk_in_world(chunk_pos: Vector2, data: Dictionary, res: int, col: 
 		if active_chunks[chunk_pos].res == res: return
 		active_chunks[chunk_pos].node.queue_free()
 
-	var container = Node3D.new()
-	add_child(container)
+	# МАГІЯ МОДУЛЬНОСТІ: Створюємо Чанк і передаємо йому дані
+	var chunk_instance = chunk_scene.instantiate()
+	add_child(chunk_instance)
+	chunk_instance.build_from_data(chunk_pos, res, col, data, shared_terrain_material, shared_water_material, shared_low_poly_tree)
 
-	var land = MeshInstance3D.new()
-	land.mesh = data.mesh
-	land.material_override = shared_terrain_material 
-	if col: land.create_trimesh_collision()
-	container.add_child(land)
-
-	if data.needs_water:
-		var water = MeshInstance3D.new()
-		var w_mesh = PlaneMesh.new()
-		w_mesh.size = Vector2(CHUNK_SIZE, CHUNK_SIZE)
-		w_mesh.subdivide_width = 40 
-		w_mesh.subdivide_depth = 40
-		water.mesh = w_mesh
-		water.global_position = Vector3(chunk_pos.x * CHUNK_SIZE + CHUNK_SIZE/2.0, WATER_LEVEL, chunk_pos.y * CHUNK_SIZE + CHUNK_SIZE/2.0)
-		water.material_override = shared_water_material
-		container.add_child(water)
-
-	for mesh in data.v_trans.keys():
-		var transforms = data.v_trans[mesh]
-		var type = data.v_types[mesh]
-		
-		if transforms.size() > 0:
-			var mmi = MultiMeshInstance3D.new()
-			var mm = MultiMesh.new()
-			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.instance_count = transforms.size()
-			mm.mesh = mesh
-			
-			for i in range(transforms.size()):
-				mm.set_instance_transform(i, transforms[i])
-			mmi.multimesh = mm
-			
-			# ЧИСТИЙ БЛОК: Ніякого material_override, тільки LOD і тіні
-			if type == "grass" or type == "flowers" or type == "mushrooms":
-				mmi.visibility_range_end = 60.0 
-				mmi.visibility_range_end_margin = 5.0
-				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF 
-				
-			elif type == "trees":
-				mmi.visibility_range_end = 70.0 
-				mmi.visibility_range_end_margin = 10.0
-				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-				_add_low_poly_trees(container, transforms)
-				
-			mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-			container.add_child(mmi)
-
-	active_chunks[chunk_pos] = {"node": container, "res": res}
-
-# --- ОПТИМІЗОВАНИЙ LOD ДЕРЕВ ---
-func _add_low_poly_trees(container, transforms):
-	var mmi_low = MultiMeshInstance3D.new()
-	var mm_low = MultiMesh.new()
-	mm_low.transform_format = MultiMesh.TRANSFORM_3D
-	mm_low.instance_count = transforms.size()
-	
-	# ВИКОРИСТОВУЄМО СПІЛЬНИЙ МЕШ З ПАМ'ЯТІ (БЕЗ ВИТОКІВ!)
-	mm_low.mesh = shared_low_poly_tree 
-	
-	for i in range(transforms.size()):
-		mm_low.set_instance_transform(i, transforms[i])
-	
-	mmi_low.multimesh = mm_low
-	mmi_low.visibility_range_begin = 70.0 
-	mmi_low.visibility_range_begin_margin = 10.0
-	mmi_low.visibility_range_end = 350.0 
-	mmi_low.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-	mmi_low.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF # Дальні дерева не кидають тінь
-	
-	container.add_child(mmi_low)
-
+	active_chunks[chunk_pos] = {"node": chunk_instance, "res": res}
 
 # ==========================================
 # БІОМИ, UI ТА МАТЕРІАЛИ (Без змін)

@@ -21,6 +21,7 @@ tree_density = 150
 grass_scenes = Array[PackedScene]([ExtResource("5_nmc8p"), ExtResource("6_jukfr"), ExtResource("7_5cda8"), ExtResource("8_26itr")])
 flower_scenes = Array[PackedScene]([ExtResource("1_mq1od"), ExtResource("2_mlmqw"), ExtResource("3_3j5hd"), ExtResource("4_v1l6m")])
 mushroom_scenes = Array[PackedScene]([ExtResource("9_cdxef"), ExtResource("10_jtp4v")])
+use_procedural_tree = true
 grass_chance = 0.6
 mushroom_chance = 0.01
 tree_chance = 0.1
