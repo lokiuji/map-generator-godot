@@ -4,28 +4,35 @@ class_name WorldChunk
 var chunk_pos: Vector2
 var chunk_size: float
 var resolution: int
-
 var thread: Thread
 var terrain_mesh_instance: MeshInstance3D
 
 var grass_mesh: Mesh
-# ПЕРЕКОНАЙСЯ, ЩО ЦЕЙ ШЛЯХ ПРАВИЛЬНИЙ ДЛЯ ТВОГО МАТЕРІАЛУ ТРАВИ
 var grass_material = preload("res://Materials/grass_mat.tres") 
 
 var noise: FastNoiseLite
 var moisture: FastNoiseLite
 var mountain: FastNoiseLite
+var continent: FastNoiseLite 
+
+var player_ref: Node3D
+var mmi: MultiMeshInstance3D 
 
 signal chunk_ready(chunk_node)
 
-func start_generation(pos: Vector2, size: float, res: int, material: Material, g_noise: FastNoiseLite, g_moist: FastNoiseLite, g_mount: FastNoiseLite, g_mesh: Mesh):
+func start_generation(pos: Vector2, size: float, res: int, material: Material, 
+	g_noise: FastNoiseLite, g_moist: FastNoiseLite, g_mount: FastNoiseLite, 
+	g_cont: FastNoiseLite, g_mesh: Mesh, p_player: Node3D):
+	
 	chunk_pos = pos
 	chunk_size = size
 	resolution = res
 	noise = g_noise 
 	moisture = g_moist 
 	mountain = g_mount
-	grass_mesh = g_mesh # Приймаємо процедурну траву
+	continent = g_cont
+	grass_mesh = g_mesh
+	player_ref = p_player
 	
 	terrain_mesh_instance = MeshInstance3D.new()
 	terrain_mesh_instance.material_override = material
@@ -34,14 +41,31 @@ func start_generation(pos: Vector2, size: float, res: int, material: Material, g
 	thread = Thread.new()
 	thread.start(_build_terrain_data_in_thread)
 
+func _process(_delta):
+	if mmi and player_ref:
+		var dist = global_position.distance_to(player_ref.global_position)
+		mmi.visible = dist < 160.0
+
+# --- СПІЛЬНА ФУНКЦІЯ ВИСОТИ ---
+func _get_h(nx: float, nz: float) -> float:
+	var h_raw = noise.get_noise_2d(nx, nz)
+	var c_raw = continent.get_noise_2d(nx, nz) 
+	if c_raw < -0.2: 
+		return lerp(-40.0, 2.8, (c_raw + 1.0) / 0.8)
+	
+	var m_raw = mountain.get_noise_2d(nx, nz)
+	var inland_blend = smoothstep(-0.2, 0.1, c_raw)
+	var base_h = (h_raw + 1.0) / 2.0
+	var terrain_h = pow(base_h, 1.5) * 35.0
+	var mount_h = smoothstep(0.1, 0.8, m_raw) * inland_blend * 200.0
+	return 2.8 + (terrain_h + mount_h) * inland_blend
+
 func _build_terrain_data_in_thread():
 	var st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	
 	var step = chunk_size / resolution
 	var offset_x = chunk_pos.x * chunk_size
 	var offset_z = chunk_pos.y * chunk_size
-	
 	var rng = RandomNumberGenerator.new()
 	rng.seed = hash(str(chunk_pos))
 	
@@ -53,81 +77,79 @@ func _build_terrain_data_in_thread():
 			var world_x = offset_x + x * step
 			var world_z = offset_z + z * step
 			
-			var raw_h = noise.get_noise_2d(world_x, world_z)
-			var m_raw = mountain.get_noise_2d(world_x, world_z)
+			var py = _get_h(world_x, world_z)
 			var moist = moisture.get_noise_2d(world_x, world_z)
-			
-			# --- ПЛАВНА МАТЕМАТИКА ВИСОТИ (Жодних обривів!) ---
-			var base_h = (raw_h + 1.0) / 2.0 # від 0.0 до 1.0
-			
-			# pow() робить долини дуже плавними (для пляжів), а пагорби крутими
-			var py = pow(base_h, 1.5) * 20.0 
-			
-			# Гори виростають тільки з високих пагорбів, тому обривів біля води не буде
-			if m_raw > 0.0:
-				var m_mult = smoothstep(0.0, 0.8, m_raw)
-				py += m_mult * base_h * 180.0 
-			
+
 			st.set_color(Color(moist, 0, 0))
 			st.set_uv(Vector2(float(x) / resolution, float(z) / resolution))
 			st.add_vertex(Vector3(x * step, py, z * step))
+			if py < 2.9: needs_water = true
 			
-			# Вода малюється, якщо є плавна низина
-			if py < 2.8 and moist > -0.2: 
-				needs_water = true
-			
-			# --- ЛОГІКА ТРАВИ ---
+			# === ІДЕАЛЬНА ЛОГІКА ТРАВИ (БЕЗ ЛИСИН І ПОЛЬОТІВ) ===
 			if x < resolution and z < resolution:
-				for i in range(12): # 12 травинок на квадрат = дуже густий ліс
-					var gx = world_x + rng.randf() * step
-					var gz = world_z + rng.randf() * step
-					
-					var g_raw = noise.get_noise_2d(gx, gz)
-					var gm_raw = mountain.get_noise_2d(gx, gz)
-					var g_moist = moisture.get_noise_2d(gx, gz)
-					
-					var g_base = (g_raw + 1.0) / 2.0
-					var g_py = pow(g_base, 1.5) * 20.0
-					if gm_raw > 0.0: g_py += smoothstep(0.0, 0.8, gm_raw) * g_base * 180.0
-					
-					# Саджаємо тільки вище води і там де волого
-					if g_py > 3.0 and g_py < 35.0 and g_moist > 0.0: 
-						var pos = Vector3(gx - offset_x, g_py, gz - offset_z)
-						var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU)
-						basis = basis.scaled(Vector3.ONE * rng.randf_range(0.8, 1.5))
-						grass_transforms.append(Transform3D(basis, pos))
+				var h00 = py 
+				var h10 = _get_h(world_x + step, world_z)
+				var h01 = _get_h(world_x, world_z + step)
+				var h11 = _get_h(world_x + step, world_z + step)
+				
+				var cell_cont = continent.get_noise_2d(world_x, world_z)
+				
+				if cell_cont > -0.2 and moist > -0.15:
+					# СІТКОВИЙ СПАВН (Jittered Grid): гарантує 100% покриття
+					var density = 10 # 10x10 = 100 кущів на квадрат
+					for gx_idx in range(density):
+						for gz_idx in range(density):
+							# Вираховуємо позицію рівномірно по сітці + легкий рандом для природності
+							var local_x = (gx_idx + rng.randf()) / float(density)
+							var local_z = (gz_idx + rng.randf()) / float(density)
+							
+							var gx = world_x + local_x * step
+							var gz = world_z + local_z * step
+							var g_py = 0.0
+							
+							# Барицентрична інтерполяція (Трава ідеально лежить на трикутнику)
+							if local_x + local_z <= 1.0:
+								g_py = h00 + local_x * (h10 - h00) + local_z * (h01 - h00)
+							else:
+								var nx = 1.0 - local_x
+								var nz = 1.0 - local_z
+								g_py = h11 + nx * (h01 - h11) + nz * (h10 - h11)
+								
+							# Вдавлюємо корінь трохи в землю
+							g_py -= 0.1 
+							
+							if g_py > 3.2 and g_py < 40.0: 
+								var pos = Vector3(gx - offset_x, g_py, gz - offset_z)
+								
+								# МАГІЯ ГУСТОТИ: Робимо кущі ширшими (X і Z), щоб вони перекривали землю
+								var s_xz = rng.randf_range(1.5, 2.5) 
+								var s_y = rng.randf_range(0.8, 1.3)
+								var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s_xz, s_y, s_xz))
+								
+								grass_transforms.append(Transform3D(basis, pos))
 			
 	for z in range(resolution):
 		for x in range(resolution):
 			var i = x + z * (resolution + 1)
-			st.add_index(i)
-			st.add_index(i + 1)
-			st.add_index(i + resolution + 1)
-			st.add_index(i + 1)
-			st.add_index(i + resolution + 2)
-			st.add_index(i + resolution + 1)
+			st.add_index(i); st.add_index(i + 1); st.add_index(i + resolution + 1)
+			st.add_index(i + 1); st.add_index(i + resolution + 2); st.add_index(i + resolution + 1)
 			
 	st.generate_normals()
-	var array_mesh = st.commit()
-	
-	call_deferred("_on_thread_finished", {"mesh": array_mesh, "grass": grass_transforms, "has_water": needs_water})
+	call_deferred("_on_thread_finished", {"mesh": st.commit(), "grass": grass_transforms, "has_water": needs_water})
 
 func _on_thread_finished(data: Dictionary):
 	thread.wait_to_finish() 
 	terrain_mesh_instance.mesh = data["mesh"]
 	terrain_mesh_instance.create_trimesh_collision()
 	
-	# --- ФІКС ТРАВИ: ДОДАЛИ mmi.multimesh = mm ---
 	if grass_mesh and data["grass"].size() > 0:
-		var mmi = MultiMeshInstance3D.new()
+		mmi = MultiMeshInstance3D.new() 
 		var mm = MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.mesh = grass_mesh
 		mm.instance_count = data["grass"].size() 
-		
-		mmi.multimesh = mm # <--- ОСЬ ЦЕЙ МАГІЧНИЙ РЯДОК!
+		mmi.multimesh = mm 
 		mmi.material_override = grass_material 
-		
 		for i in range(data["grass"].size()):
 			mm.set_instance_transform(i, data["grass"][i])
 		add_child(mmi)
@@ -137,12 +159,11 @@ func _on_thread_finished(data: Dictionary):
 		water_mesh.size = Vector2(chunk_size, chunk_size)
 		var water_instance = MeshInstance3D.new()
 		water_instance.mesh = water_mesh
-		water_instance.material_override = load("res://Materials/water_pro.gdshader") 
+		water_instance.material_override = load("res://Materials/water_pro.gdshader")
 		water_instance.position = Vector3(chunk_size / 2.0, 2.8, chunk_size / 2.0) 
 		add_child(water_instance)
 	
 	chunk_ready.emit(self)
 
 func _exit_tree():
-	if thread and thread.is_started():
-		thread.wait_to_finish()
+	if thread and thread.is_started(): thread.wait_to_finish()

@@ -13,24 +13,19 @@ var is_first_spawn = true
 var global_noise: FastNoiseLite
 var moisture_noise: FastNoiseLite
 var mountain_noise: FastNoiseLite
+var continent_noise: FastNoiseLite 
 
-# --- ЗМІННА ДЛЯ ПРОЦЕДУРНОЇ ТРАВИ ---
-var procedural_grass_mesh: Mesh
+var procedural_grass_mesh = preload("res://high_poly_grass.tres")
 
-# --- КАРТА З ПРОКРУТКОЮ ---
 var map_canvas: CanvasLayer
 var map_rect: TextureRect
 var map_size = 400
-var map_zoom = 15.0
+var map_zoom = 18.0 
 var map_offset = Vector2.ZERO 
 var is_dragging_map = false
 
 func _ready():
 	_setup_noises()
-	
-	# ГЕНЕРУЄМО 3D-СІТКУ ТРАВИ КОДОМ! Ніяких зовнішніх файлів!
-	var procedural_grass_mesh = preload("res://high_poly_grass.tres")
-	
 	if not player: player = get_node_or_null("Player")
 	_setup_map_ui()
 	
@@ -42,7 +37,7 @@ func _ready():
 func _setup_noises():
 	global_noise = FastNoiseLite.new()
 	global_noise.seed = 1234
-	global_noise.frequency = 0.005
+	global_noise.frequency = 0.008
 	
 	moisture_noise = FastNoiseLite.new()
 	moisture_noise.seed = 9999
@@ -50,44 +45,25 @@ func _setup_noises():
 	
 	mountain_noise = FastNoiseLite.new()
 	mountain_noise.seed = 3333
-	mountain_noise.frequency = 0.001 
+	mountain_noise.frequency = 0.001
+	
+	continent_noise = FastNoiseLite.new()
+	continent_noise.seed = 7777
+	# РОБИМО КОНТИНЕНТИ ВЕЛИЧЕЗНИМИ (Менше води, більше суші)
+	continent_noise.frequency = 0.0003 
 
-## --- МАГІЯ: СТВОРЕННЯ МЕШУ ТРАВИ З НУЛЯ ---
-#func _build_grass_mesh() -> Mesh:
-	#var st = SurfaceTool.new()
-	#st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	#var w = 0.4 # Ширина травинки
-	#var h = 0.8 # Висота травинки
-	#
-	## Площина 1 (Спереду/Ззаду)
-	#st.set_uv(Vector2(0, 1)); st.add_vertex(Vector3(-w, 0, 0))
-	#st.set_uv(Vector2(1, 1)); st.add_vertex(Vector3(w, 0, 0))
-	#st.set_uv(Vector2(1, 0)); st.add_vertex(Vector3(w, h, 0))
-	#st.set_uv(Vector2(0, 1)); st.add_vertex(Vector3(-w, 0, 0))
-	#st.set_uv(Vector2(1, 0)); st.add_vertex(Vector3(w, h, 0))
-	#st.set_uv(Vector2(0, 0)); st.add_vertex(Vector3(-w, h, 0))
-	#
-	## Площина 2 (Зліва/Справа) - Перехрестя
-	#st.set_uv(Vector2(0, 1)); st.add_vertex(Vector3(0, 0, -w))
-	#st.set_uv(Vector2(1, 1)); st.add_vertex(Vector3(0, 0, w))
-	#st.set_uv(Vector2(1, 0)); st.add_vertex(Vector3(0, h, w))
-	#st.set_uv(Vector2(0, 1)); st.add_vertex(Vector3(0, 0, -w))
-	#st.set_uv(Vector2(1, 0)); st.add_vertex(Vector3(0, h, w))
-	#st.set_uv(Vector2(0, 0)); st.add_vertex(Vector3(0, h, -w))
-	#
-	#st.generate_normals()
-	#return st.commit()
-
-# --- ЛОГІКА ІНТЕРФЕЙСУ КАРТИ ---
 func _setup_map_ui():
 	map_canvas = CanvasLayer.new()
 	map_canvas.visible = false
+	map_canvas.layer = 100
+	
 	map_rect = TextureRect.new()
 	map_rect.custom_minimum_size = Vector2(600, 600)
 	map_rect.set_anchors_preset(Control.PRESET_CENTER)
 	map_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	map_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	map_rect.gui_input.connect(_on_map_gui_input)
+	
 	map_canvas.add_child(map_rect)
 	add_child(map_canvas)
 
@@ -124,25 +100,29 @@ func _generate_map_texture():
 			var wx = map_offset.x + (x - map_size/2.0) * map_zoom
 			var wz = map_offset.y + (y - map_size/2.0) * map_zoom
 			
-			var h = global_noise.get_noise_2d(wx, wz)
-			var m = moisture_noise.get_noise_2d(wx, wz)
-			var mount = mountain_noise.get_noise_2d(wx, wz)
+			var h_raw = global_noise.get_noise_2d(wx, wz)
+			var c_raw = continent_noise.get_noise_2d(wx, wz)
+			var m_raw = mountain_noise.get_noise_2d(wx, wz)
+			var moist = moisture_noise.get_noise_2d(wx, wz)
 			
-			# ТА САМА МАТЕМАТИКА ВИСОТИ ДЛЯ КАРТИ
-			var base_h = (h + 1.0) / 2.0
-			var py = pow(base_h, 1.5) * 20.0
-			if mount > 0.0:
-				py += smoothstep(0.0, 0.8, mount) * base_h * 180.0
+			var py = 0.0
+			# Зсуваємо поріг води до -0.2 (Тепер суші буде 65%!)
+			if c_raw < -0.2: 
+				py = lerp(-40.0, 2.8, (c_raw + 1.0) / 0.8)
+			else:
+				# ПЛАВНИЙ ПЕРЕХІД КАРТИ
+				var inland_blend = smoothstep(-0.2, 0.1, c_raw)
+				var base_h = (h_raw + 1.0) / 2.0
+				var terrain_h = pow(base_h, 1.5) * 35.0
+				var mount_h = smoothstep(0.1, 0.8, m_raw) * inland_blend * 200.0
+				py = 2.8 + (terrain_h + mount_h) * inland_blend
 			
 			var col = Color(0.1, 0.4, 0.1) 
-			if py < 2.8: col = Color(0.1, 0.3, 0.7) # Вода
-			elif py > 100.0: col = Color.WHITE # Сніг
-			elif py > 40.0: col = Color.GRAY # Скелі
-			elif m < -0.15: col = Color(0.8, 0.7, 0.3) # Пісок
-			else:
-				var g = clamp(0.5 + m*0.5, 0.2, 0.6)
-				col = Color(0.1, g, 0.15)
-				
+			if py < 2.8: col = Color(0.1, 0.3, 0.6) 
+			elif py > 130.0: col = Color.WHITE 
+			elif py > 45.0: col = Color.GRAY 
+			elif moist < -0.15: col = Color(0.8, 0.7, 0.3) 
+			
 			img.set_pixel(x, y, col)
 	
 	var p_map_x = (player.global_position.x - map_offset.x) / map_zoom + map_size/2.0
@@ -168,7 +148,6 @@ func _process(_delta):
 	var px = floor(player.global_position.x / CHUNK_SIZE)
 	var pz = floor(player.global_position.z / CHUNK_SIZE)
 	var new_chunk = Vector2(px, pz)
-	
 	if new_chunk != current_player_chunk:
 		current_player_chunk = new_chunk
 		update_chunks(current_player_chunk)
@@ -200,8 +179,8 @@ func spawn_chunk(chunk_pos: Vector2):
 	add_child(chunk)
 	active_chunks[chunk_pos] = chunk
 	
-	# ПЕРЕДАЄМО ГОТОВУ ТРАВУ В ЧАНК
-	chunk.start_generation(chunk_pos, CHUNK_SIZE, 16, terrain_material, global_noise, moisture_noise, mountain_noise, procedural_grass_mesh)
+	chunk.start_generation(chunk_pos, CHUNK_SIZE, 16, terrain_material, 
+		global_noise, moisture_noise, mountain_noise, continent_noise, procedural_grass_mesh, player)
 
 func _on_chunk_ready(chunk: Node3D):
 	if is_first_spawn and chunk.chunk_pos == current_player_chunk:
