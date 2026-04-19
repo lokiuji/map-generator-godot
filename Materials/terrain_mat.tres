@@ -1,15 +1,7 @@
-[gd_resource type="StandardMaterial3D" format=3 uid="uid://d28jla4t4xqs3"]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://d28jla4t4xqs3"]
 
 [ext_resource type="Shader" uid="uid://r00iywomgugq" path="res://Materials/terrain_pro.gdshader" id="1_opkci"]
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_gg4jl"]
+[resource]
 render_priority = 0
 shader = ExtResource("1_opkci")
-shader_parameter/color_sand = Color(0.8, 0.7, 0.4, 1)
-shader_parameter/color_grass = Color(0.2, 0.5, 0.15, 1)
-shader_parameter/color_rock = Color(0.4, 0.4, 0.4, 1)
-shader_parameter/color_snow = Color(0.9, 0.9, 0.95, 1)
-
-[resource]
-next_pass = SubResource("ShaderMaterial_gg4jl")
-albedo_color = Color(0.03137255, 0.3372549, 0.039215688, 1)
