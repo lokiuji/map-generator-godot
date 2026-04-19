@@ -48,17 +48,35 @@ func _process(_delta):
 
 # --- СПІЛЬНА ФУНКЦІЯ ВИСОТИ ---
 func _get_h(nx: float, nz: float) -> float:
-	var h_raw = noise.get_noise_2d(nx, nz)
 	var c_raw = continent.get_noise_2d(nx, nz) 
-	if c_raw < -0.2: 
-		return lerp(-40.0, 2.8, (c_raw + 1.0) / 0.8)
-	
+	var h_raw = noise.get_noise_2d(nx, nz)
 	var m_raw = mountain.get_noise_2d(nx, nz)
-	var inland_blend = smoothstep(-0.2, 0.1, c_raw)
-	var base_h = (h_raw + 1.0) / 2.0
-	var terrain_h = pow(base_h, 1.5) * 35.0
-	var mount_h = smoothstep(0.1, 0.8, m_raw) * inland_blend * 200.0
-	return 2.8 + (terrain_h + mount_h) * inland_blend
+	
+	# === 1. БІОМ: ОКЕАНИ ТА МОРЯ ===
+	if c_raw < -0.15: 
+		# Чим нижче c_raw, тим глибший океан (аж до -50 метрів)
+		var ocean_depth = smoothstep(-0.15, -0.6, c_raw)
+		return lerp(2.8, -50.0, ocean_depth)
+	
+	# Ця змінна робить плавний піщаний пляж на переході від океану до суші
+	var inland_blend = smoothstep(-0.15, 0.0, c_raw)
+	
+	var base_h = (h_raw + 1.0) / 2.0 
+	var py = 0.0
+	
+	# === 2. БІОМ: ОЗЕРА ТА РІЧКИ ===
+	# Якщо шум висоти дуже низький — екскаватор викопує озеро
+	if base_h < 0.25:
+		var lake_depth = smoothstep(0.25, 0.0, base_h)
+		py = lerp(2.8, -15.0, lake_depth)
+	else:
+		# === 3. БІОМ: СУША ТА ГОРИ ===
+		var terrain_h = pow(base_h, 1.5) * 40.0
+		var mount_h = smoothstep(0.1, 0.8, m_raw) * 200.0
+		# Суша починає рости від рівня води (2.8)
+		py = 2.8 + (terrain_h + mount_h)
+
+	return lerp(2.8, py, inland_blend)
 
 func _build_terrain_data_in_thread():
 	var st = SurfaceTool.new()
@@ -79,6 +97,17 @@ func _build_terrain_data_in_thread():
 			
 			var py = _get_h(world_x, world_z)
 			var moist = moisture.get_noise_2d(world_x, world_z)
+
+			# === ЕКСКАВАТОР: Фізично викопуємо дно океанів та озер ===
+			# Увага: Якщо у тебе в старому коді рівень води був -20.0, напиши тут -20.0. 
+			# Якщо у новому 2.8, напиши 2.8.
+			var my_water_level = 2.8 
+			
+			if py < my_water_level:
+				# Плавний спуск: що глибше початкова точка під воду, то сильніше ми копаємо яму (до -35 метрів)
+				# Це створить справжні океанські впадини для синього градієнта!
+				var dig_factor = smoothstep(my_water_level, my_water_level - 3.0, py)
+				py = lerp(py, my_water_level - 35.0, dig_factor)
 
 			st.set_color(Color(moist, 0, 0))
 			st.set_uv(Vector2(float(x) / resolution, float(z) / resolution))
@@ -155,13 +184,17 @@ func _on_thread_finished(data: Dictionary):
 		var water_mesh = PlaneMesh.new()
 		water_mesh.size = Vector2(chunk_size, chunk_size)
 		
-		# === НОВЕ: ДІЛИМО ВОДУ НА ПОЛІГОНИ ДЛЯ ХВИЛЬ ===
+		# --- ФІКС 1: Додаємо сітку для фізичних хвиль (40x40 трикутників) ---
 		water_mesh.subdivide_width = 40 
 		water_mesh.subdivide_depth = 40
 		
 		var water_instance = MeshInstance3D.new()
 		water_instance.mesh = water_mesh
-		water_instance.material_override = load("res://Materials/water_pro.gdshader")
+		
+		# --- ФІКС 2: Завантажуємо саме МАТЕРІАЛ, а не шейдер ---
+		# Переконайся, що цей файл існує за цим шляхом
+		water_instance.material_override = load("res://Materials/water_mat.tres")
+		
 		water_instance.position = Vector3(chunk_size / 2.0, 2.8, chunk_size / 2.0) 
 		add_child(water_instance)
 	

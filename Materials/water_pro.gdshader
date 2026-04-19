@@ -1,76 +1,79 @@
 shader_type spatial;
-// Вода має бути прозорою, і ми не рендеримо її задню частину
-render_mode depth_draw_opaque, specular_toon, cull_back;
+// depth_draw_always гарантує правильне накладання тіней та прозорості
+render_mode specular_schlick_ggx, cull_disabled, depth_draw_always;
 
-// === КОЛЬОРИ ===
-uniform vec3 shallow_color : source_color = vec3(0.15, 0.70, 0.75); // Тропічний бірюзовий
-uniform vec3 deep_color : source_color = vec3(0.02, 0.20, 0.45);    // Глибокий синій
-uniform vec3 foam_color : source_color = vec3(1.0, 1.0, 1.0);       // Біла піна
+uniform vec3 color_deep : source_color = vec3(0.05, 0.35, 0.65);
+uniform vec3 color_shallow : source_color = vec3(0.2, 0.8, 0.85); 
+uniform vec3 color_foam : source_color = vec3(1.0, 1.0, 1.0);
+uniform float metallic = 0.8;
+uniform float roughness = 0.05;
 
-// === ПАРАМЕТРИ ===
-uniform float wave_speed = 0.4;
-uniform float wave_height = 0.6; // Висота хвиль
+uniform sampler2D wave_noise;
+uniform sampler2D depth_texture : hint_depth_texture, filter_linear_mipmap;
 
-// === ГЛИБИНА І ПІНА ===
-uniform sampler2D depth_texture : hint_depth_texture, filter_nearest;
-uniform float depth_fade_distance = 6.0; // Як швидко вода стає темною
-uniform float foam_distance = 0.4;       // Товщина лінії піни біля берега
-
-// === ТЕКСТУРА ХВИЛЬ ===
-// Сюди в Інспекторі треба буде додати FastNoiseLite!
-uniform sampler2D wave_noise : repeat_enable;
-
-varying vec3 world_pos;
+varying vec2 world_pos;
 
 void vertex() {
-	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
+	float time = TIME * 0.8;
 	
-	// Рухаємо воду по вертикалі, створюючи плавні хвилі
-	float wave = sin(world_pos.x * 0.2 + TIME * wave_speed) * cos(world_pos.z * 0.2 + TIME * wave_speed);
-	VERTEX.y += wave * wave_height;
+	// Хвилі Герстнера
+	float wave1 = sin(world_pos.x * 0.03 + time) * 0.6;
+	float wave2 = cos(world_pos.y * 0.04 + time * 1.2) * 0.6;
+	
+	// Трохи зменшили загальну висоту хвиль, щоб вони менше пробивали берег
+	VERTEX.y += (wave1 + wave2) * 0.8; 
 }
 
 void fragment() {
-	// === 1. МАТЕМАТИКА ГЛИБИНИ (Depth Buffer) ===
-	// Зчитуємо справжню глибину землі під водою
-	float raw_depth = texture(depth_texture, SCREEN_UV).r;
-	vec3 ndc = vec3(SCREEN_UV * 2.0 - 1.0, raw_depth);
-	vec4 view = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
-	view.xyz /= view.w;
-	float linear_depth = -view.z;
-	
-	// Відстань від поверхні води до землі під нею (в метрах)
-	float water_depth = max(0.0, linear_depth + VERTEX.z);
+	// Точна глибина
+	float depth_tex = textureLod(depth_texture, SCREEN_UV, 0.0).r;
+	vec4 ndc = vec4(SCREEN_UV * 2.0 - 1.0, depth_tex, 1.0);
+	vec4 view_pos = INV_PROJECTION_MATRIX * ndc;
+	view_pos.xyz /= view_pos.w;
+	float water_depth = max(0.0, VERTEX.z - view_pos.z);
 
-	// === 2. КОЛІР ТА ПІНА ===
-	// Плавний перехід кольору залежно від глибини
-	float depth_blend = smoothstep(0.0, depth_fade_distance, water_depth);
-	vec3 base_color = mix(shallow_color, deep_color, depth_blend);
+	vec2 uv1 = world_pos * 0.02 + vec2(TIME * 0.015, TIME * 0.01);
+	vec2 uv2 = world_pos * 0.02 + vec2(-TIME * 0.01, TIME * 0.015);
+	vec3 n1 = texture(wave_noise, uv1).xyz;
+	vec3 n2 = texture(wave_noise, uv2).xyz;
+	vec3 raw_normal = mix(n1, n2, 0.5);
 
-	// Піна біля берега (малюється тільки там, де глибина менша за foam_distance)
-	float edge_foam = 1.0 - smoothstep(0.0, foam_distance, water_depth);
+	float calm_factor = smoothstep(0.0, 2.0, water_depth);
+	vec3 final_normal = mix(vec3(0.0, 1.0, 0.0), raw_normal, calm_factor);
 
-	// Додаємо шум на поверхню води (щоб хвилі мали світлі бліки і піну на гребенях)
-	vec2 noise_uv = world_pos.xz * 0.04 + TIME * wave_speed * 0.1;
-	float noise_val = texture(wave_noise, noise_uv).r;
-	
-	// Піна на верхівках хвиль
-	float crest_foam = smoothstep(0.65, 0.9, noise_val) * 0.4;
+	// === 1. ВБИВАЄМО СІТКУ БЕРЕГА ===
+	// Вода повністю розчиняється в перших 15 см від землі. 
+	// Це робить перетин полігонів невидимим і створює ідеальний зріз!
+	float edge_alpha = smoothstep(0.15, 1.0, water_depth);
 
-	// Об'єднуємо всю піну
-	float total_foam = clamp(edge_foam + crest_foam, 0.0, 1.0);
+	// Пульсуюча піна
+	float foam_zone = smoothstep(0.2, 1.0, water_depth) * (1.0 - smoothstep(1.0, 3.0, water_depth));
+	float wave_pulse = sin(water_depth * 5.0 - TIME * 4.0) * 0.5 + 0.5;
+	float foam = foam_zone * wave_pulse;
 
-	// === 3. ФІНАЛЬНИЙ ВИВІД ===
-	// Застосовуємо кольори (піна перекриває воду)
-	ALBEDO = mix(base_color, foam_color, total_foam);
-	
-	// Прозорість: на мілководді вода на 70% прозора, на глибині або там де піна — 100% непрозора
-	ALPHA = mix(0.7, 1.0, clamp(depth_blend + total_foam, 0.0, 1.0));
+	// Градієнт мілководдя (тепер він працюватиме, бо ми викопаємо дно!)
+	float color_blend = smoothstep(0.0, 8.0, water_depth);
+	vec3 water_color = mix(color_shallow, color_deep, color_blend);
+	vec3 final_color = mix(water_color, color_foam, foam);
 
-	ROUGHNESS = 0.15; // Вода майже гладка
-	METALLIC = 0.1;
-	SPECULAR = 0.8;   // Гарні відблиски сонця
-	
-	// Легке спотворення нормалей для бліків на хвилях
-	NORMAL_MAP = vec3(noise_val * 0.1, 1.0, noise_val * 0.1);
+	if (!FRONT_FACING) {
+		// ОПТИКА: Вигляд з-під води
+		float view_angle = dot(normalize(VIEW), NORMAL);
+		float snell = smoothstep(0.3, 0.8, view_angle);
+		ALBEDO = mix(color_deep * 0.4, final_color, snell);
+		METALLIC = mix(1.0, 0.0, snell);
+		ROUGHNESS = mix(0.0, 0.1, snell);
+		ALPHA = mix(1.0, 0.5, snell);
+		NORMAL_MAP = final_normal * 0.3;
+	} else {
+		// ЗВИЧАЙНИЙ ВИГЛЯД ЗВЕРХУ
+		ALBEDO = final_color;
+		METALLIC = metallic;
+		ROUGHNESS = roughness;
+		NORMAL_MAP = final_normal;
+		
+		// МАГІЯ: Використовуємо edge_alpha, щоб приховати сітку берега + непрозора піна
+		ALPHA = max(edge_alpha * 0.95, foam); 
+	}
 }
