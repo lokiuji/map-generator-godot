@@ -72,31 +72,27 @@ func _process(_delta):
 # ==========================================
 func _create_shared_lod_mesh():
 	shared_low_poly_tree = QuadMesh.new()
-	shared_low_poly_tree.size = Vector2(12.0, 16.0) # Оптимальний розмір
+	shared_low_poly_tree.size = Vector2(12.0, 16.0) 
 	shared_low_poly_tree.center_offset = Vector3(0, 8.0, 0) 
 
 	var mat = StandardMaterial3D.new()
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR # Scissor - найшвидший
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR 
 	mat.alpha_scissor_threshold = 0.5
-	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_OPAQUE_ONLY # ВИПРАВЛЯЄ ПРОСВІЧУВАННЯ
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_OPAQUE_ONLY 
 	
 	if billboard_tree_texture:
 		mat.albedo_texture = billboard_tree_texture
 	
+	# Правильні налаштування білборда (БЕЗ ДУБЛІКАТІВ)
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	mat.billboard_keep_scale = true
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX # Рятує FPS на слабких картах
-	
-	shared_low_poly_tree.material = mat
-		
-	# НОВЕ: Дерево завжди стоїть рівно відносно землі, повертається тільки по осі Y!
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y 
-	mat.billboard_keep_scale = true 
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX 
 	mat.roughness = 1.0 
 	mat.specular = 0.0
 
 	shared_low_poly_tree.material = mat
-	
+
+
 func _setup_biome_meshes():
 	for b in biomes:
 		if b == null: continue
@@ -272,15 +268,16 @@ func _build_chunk_data(chunk_pos: Vector2, resolution: int) -> Dictionary:
 	var chunk_rng = RandomNumberGenerator.new()
 	chunk_rng.seed = hash(str(chunk_pos)) # Дерева тепер назавжди прив'язані до координат!
 
-	# --- РОЗУМНА ЛОГІКА СПАВНУ ТА LOD ---
-	var is_distant = resolution < 32 # Тільки найближчий чанк (res 32) має 3D дерева
-	var spawn_attempts = 100 if is_distant else 2000 # Різко зменшуємо кількість спроб для дальніх
-	var max_trees = 25 if is_distant else 35 # Далеко ліс трохи рідший для оптимізації
+	# --- ІДЕАЛЬНА ЛОГІКА LOD ---
+	# is_distant визначає, чи отримає чанк 3D-дерева, чи лише 2D-картинки.
+	var is_distant = resolution < 32 
 	
+	# Кількість спроб ТЕПЕР ФІКСОВАНА! Це гарантує, що ліс не "лисіє" на горизонті.
+	var spawn_attempts = 2000 
+	var max_trees = 35 
 	var tree_count = 0
 	
 	for i in range(spawn_attempts): 
-		# ВИКОРИСТОВУЄМО chunk_rng ЗАМІСТЬ randf() !!!
 		var lx = chunk_rng.randf_range(0, CHUNK_SIZE)
 		var lz = chunk_rng.randf_range(0, CHUNK_SIZE)
 		var gx = offset_x + lx
@@ -299,7 +296,7 @@ func _build_chunk_data(chunk_pos: Vector2, resolution: int) -> Dictionary:
 				var scale = 1.0
 				var y_offset = 0.0
 				
-				# Трава і квіти НЕ спавняться на дальніх чанках взагалі
+				# Трава і квіти НЕ спавняться на дальніх чанках взагалі (Рятує FPS)
 				if r < b_data.grass_chance and not is_distant:
 					target_type = "grass"
 					scale = chunk_rng.randf_range(0.8, 1.4) 
@@ -322,12 +319,10 @@ func _build_chunk_data(chunk_pos: Vector2, resolution: int) -> Dictionary:
 					if available_meshes.size() > 0:
 						var selected_mesh = available_meshes[chunk_rng.randi() % available_meshes.size()]
 						
-						# --- СУПЕР ФІКС FPS ---
-						# Якщо це дальній чанк, ми підміняємо важку 3D-модель на нашу 2D-площину!
-						# Відеокарта більше не буде вантажити справжні дерева на горизонті.
-						if is_distant and target_type == "trees":
-							selected_mesh = shared_low_poly_tree
-						# ----------------------
+						## --- БІЛБОРДИЗАЦІЯ ---
+						## Якщо це дальній чанк, жорстко підміняємо 3D дерево на дешеву площину
+						#if target_type == "trees" and is_distant:
+							#selected_mesh = shared_low_poly_tree
 						
 						if not veg_transforms.has(selected_mesh):
 							veg_transforms[selected_mesh] = []
