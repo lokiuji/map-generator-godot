@@ -5,8 +5,8 @@
 [resource]
 render_priority = 0
 shader = ExtResource("1_opkci")
-shader_parameter/color_grass = Color(0.4745098, 0.63529414, 0.3372549, 1)
-shader_parameter/color_forest = Color(0.3529412, 0.45490196, 0.3137255, 1)
+shader_parameter/color_grass = Color(0.15686275, 0.27450982, 0.07058824, 1)
+shader_parameter/color_forest = Color(0.15686275, 0.27450982, 0.07058824, 1)
 shader_parameter/color_sand = Color(0.76, 0.7, 0.5, 1)
-shader_parameter/color_rock = Color(0.28627452, 0.2627451, 0.29411766, 1)
+shader_parameter/color_rock = Color(0.45, 0.45, 0.45, 1)
 shader_parameter/color_snow = Color(0.95, 0.95, 0.95, 1)

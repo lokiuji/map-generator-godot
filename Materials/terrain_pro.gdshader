@@ -1,8 +1,9 @@
 shader_type spatial;
 
-// === ТЕПЕР ЦІ КОЛЬОРИ МОЖНА ЗМІНЮВАТИ В ІНСПЕКТОРІ ===
-uniform vec3 color_grass : source_color = vec3(0.25, 0.42, 0.12);
-uniform vec3 color_forest : source_color = vec3(0.18, 0.32, 0.08);
+// === КОЛЬОРИ ІДЕАЛЬНО ЗІСТИКОВАНІ З ТРАВОЮ ===
+// Базовий колір землі тепер ТОЧНО дорівнює color_bottom з трави!
+uniform vec3 color_grass : source_color = vec3(0.12, 0.28, 0.08);
+uniform vec3 color_forest : source_color = vec3(0.08, 0.20, 0.05);
 
 uniform vec3 color_sand : source_color = vec3(0.76, 0.70, 0.50);
 uniform vec3 color_rock : source_color = vec3(0.45, 0.45, 0.45);
@@ -32,11 +33,13 @@ void fragment() {
 		color = mix(color, color_snow, smoothstep(110.0, 140.0, v_height));
 	}
 	
+	// Робимо шум на землі ледь-ледь помітним (0.08 замість 0.15), 
+	// щоб він не ламав ілюзію злиття з травою
 	vec3 world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float ground_noise = fract(sin(dot(world_pos.xz, vec2(12.9898, 78.233))) * 43758.5453);
-	color = mix(color, color * 0.85, ground_noise * 0.15); 
+	color = mix(color, color * 0.85, ground_noise * 0.08); 
 	
 	ALBEDO = color;
 	ROUGHNESS = 0.95;
-	SPECULAR = 0.0; // Вбиваємо відблиски на землі, щоб вона була матовою
+	SPECULAR = 0.0; 
 }

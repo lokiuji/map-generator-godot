@@ -197,28 +197,33 @@ func _build_grass_mesh() -> Mesh:
 	var st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	
-	var w = 0.5 # Ширина площини
-	var h = 1.0 # Висота площини
+	var r = 0.45 
+	var h = 1.0  
 	
-	# Функція, яка малює одну площину під заданим кутом
-	var add_quad = func(rot_y: float):
-		var t = Transform3D().rotated(Vector3.UP, rot_y)
-		var v1 = t * Vector3(-w, 0, 0); var uv1 = Vector2(0, 1)
-		var v2 = t * Vector3(w, 0, 0);  var uv2 = Vector2(1, 1)
-		var v3 = t * Vector3(w, h, 0);  var uv3 = Vector2(1, 0)
-		var v4 = t * Vector3(-w, h, 0); var uv4 = Vector2(0, 0)
+	var p1 = Vector3(0, 0, r)
+	var p2 = Vector3(r * 0.866, 0, -r * 0.5) 
+	var p3 = Vector3(-r * 0.866, 0, -r * 0.5) 
+	
+	# ФУНКЦІЯ З ФЛІПОМ (змінено порядок вершин v2 та v3 для кожної грані)
+	var add_flipped_quad = func(a: Vector3, b: Vector3):
+		var v1 = a;               var uv1 = Vector2(0, 1)
+		var v2 = b;               var uv2 = Vector2(1, 1)
+		var v3 = b + Vector3(0,h,0); var uv3 = Vector2(1, 0)
+		var v4 = a + Vector3(0,h,0); var uv4 = Vector2(0, 0)
 
+		# Порядок змінено на v1-v3-v2 та v1-v4-v3, щоб "вивернути" площину
 		st.set_uv(uv1); st.add_vertex(v1)
+		st.set_uv(uv3); st.add_vertex(v3)
 		st.set_uv(uv2); st.add_vertex(v2)
-		st.set_uv(uv3); st.add_vertex(v3)
+		
 		st.set_uv(uv1); st.add_vertex(v1)
-		st.set_uv(uv3); st.add_vertex(v3)
 		st.set_uv(uv4); st.add_vertex(v4)
+		st.set_uv(uv3); st.add_vertex(v3)
 	
-	# Додаємо 3 площини з кроком у 60 градусів
-	add_quad.call(0.0)
-	add_quad.call(PI / 3.0)       # 60 градусів
-	add_quad.call(PI * 2.0 / 3.0) # 120 градусів
+	# Будуємо стінки трикутника
+	add_flipped_quad.call(p1, p2)
+	add_flipped_quad.call(p2, p3)
+	add_flipped_quad.call(p3, p1)
 
 	st.generate_normals()
 	return st.commit()

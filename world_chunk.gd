@@ -96,7 +96,7 @@ func _build_terrain_data_in_thread():
 				
 				if cell_cont > -0.2 and moist > -0.15:
 					# ВДВІЧІ МЕНШЕ ТРАВИ: було 12 (144 кущі), тепер 8 (64 кущі)
-					var density = 8 
+					var density = 10
 					for gx_idx in range(density):
 						for gz_idx in range(density):
 							var local_x = (gx_idx + rng.randf()) / float(density)
