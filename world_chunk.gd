@@ -154,6 +154,11 @@ func _on_thread_finished(data: Dictionary):
 	if data["has_water"]:
 		var water_mesh = PlaneMesh.new()
 		water_mesh.size = Vector2(chunk_size, chunk_size)
+		
+		# === НОВЕ: ДІЛИМО ВОДУ НА ПОЛІГОНИ ДЛЯ ХВИЛЬ ===
+		water_mesh.subdivide_width = 40 
+		water_mesh.subdivide_depth = 40
+		
 		var water_instance = MeshInstance3D.new()
 		water_instance.mesh = water_mesh
 		water_instance.material_override = load("res://Materials/water_pro.gdshader")
