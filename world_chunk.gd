@@ -95,11 +95,10 @@ func _build_terrain_data_in_thread():
 				var cell_cont = continent.get_noise_2d(world_x, world_z)
 				
 				if cell_cont > -0.2 and moist > -0.15:
-					# СІТКОВИЙ СПАВН (Jittered Grid): гарантує 100% покриття
-					var density = 10 # 10x10 = 100 кущів на квадрат
+					# ВДВІЧІ МЕНШЕ ТРАВИ: було 12 (144 кущі), тепер 8 (64 кущі)
+					var density = 8 
 					for gx_idx in range(density):
 						for gz_idx in range(density):
-							# Вираховуємо позицію рівномірно по сітці + легкий рандом для природності
 							var local_x = (gx_idx + rng.randf()) / float(density)
 							var local_z = (gz_idx + rng.randf()) / float(density)
 							
@@ -107,7 +106,6 @@ func _build_terrain_data_in_thread():
 							var gz = world_z + local_z * step
 							var g_py = 0.0
 							
-							# Барицентрична інтерполяція (Трава ідеально лежить на трикутнику)
 							if local_x + local_z <= 1.0:
 								g_py = h00 + local_x * (h10 - h00) + local_z * (h01 - h00)
 							else:
@@ -115,17 +113,16 @@ func _build_terrain_data_in_thread():
 								var nz = 1.0 - local_z
 								g_py = h11 + nx * (h01 - h11) + nz * (h10 - h11)
 								
-							# Вдавлюємо корінь трохи в землю
 							g_py -= 0.1 
 							
 							if g_py > 3.2 and g_py < 40.0: 
 								var pos = Vector3(gx - offset_x, g_py, gz - offset_z)
 								
-								# МАГІЯ ГУСТОТИ: Робимо кущі ширшими (X і Z), щоб вони перекривали землю
-								var s_xz = rng.randf_range(1.5, 2.5) 
-								var s_y = rng.randf_range(0.8, 1.3)
-								var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s_xz, s_y, s_xz))
+								# ПРОПОРЦІЙНИЙ МАСШТАБ: Робимо кущі значно вужчими, щоб текстура не "пливла"
+								var s_xz = rng.randf_range(1.5, 2.5) # Було 4.0 - 6.0
+								var s_y = rng.randf_range(1.0, 1.5)  # Висота
 								
+								var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s_xz, s_y, s_xz))
 								grass_transforms.append(Transform3D(basis, pos))
 			
 	for z in range(resolution):

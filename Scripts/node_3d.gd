@@ -15,7 +15,7 @@ var moisture_noise: FastNoiseLite
 var mountain_noise: FastNoiseLite
 var continent_noise: FastNoiseLite 
 
-var procedural_grass_mesh = preload("res://high_poly_grass.tres")
+var procedural_grass_mesh: Mesh
 
 var map_canvas: CanvasLayer
 var map_rect: TextureRect
@@ -26,6 +26,10 @@ var is_dragging_map = false
 
 func _ready():
 	_setup_noises()
+	
+	# === МАГІЯ: Збираємо 3 площини для текстури прямо тут ===
+	procedural_grass_mesh = _build_grass_mesh()
+	
 	if not player: player = get_node_or_null("Player")
 	_setup_map_ui()
 	
@@ -188,3 +192,33 @@ func _on_chunk_ready(chunk: Node3D):
 		if player:
 			player.global_position.y = 250.0 
 			player.process_mode = Node.PROCESS_MODE_INHERIT
+
+func _build_grass_mesh() -> Mesh:
+	var st = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	
+	var w = 0.5 # Ширина площини
+	var h = 1.0 # Висота площини
+	
+	# Функція, яка малює одну площину під заданим кутом
+	var add_quad = func(rot_y: float):
+		var t = Transform3D().rotated(Vector3.UP, rot_y)
+		var v1 = t * Vector3(-w, 0, 0); var uv1 = Vector2(0, 1)
+		var v2 = t * Vector3(w, 0, 0);  var uv2 = Vector2(1, 1)
+		var v3 = t * Vector3(w, h, 0);  var uv3 = Vector2(1, 0)
+		var v4 = t * Vector3(-w, h, 0); var uv4 = Vector2(0, 0)
+
+		st.set_uv(uv1); st.add_vertex(v1)
+		st.set_uv(uv2); st.add_vertex(v2)
+		st.set_uv(uv3); st.add_vertex(v3)
+		st.set_uv(uv1); st.add_vertex(v1)
+		st.set_uv(uv3); st.add_vertex(v3)
+		st.set_uv(uv4); st.add_vertex(v4)
+	
+	# Додаємо 3 площини з кроком у 60 градусів
+	add_quad.call(0.0)
+	add_quad.call(PI / 3.0)       # 60 градусів
+	add_quad.call(PI * 2.0 / 3.0) # 120 градусів
+
+	st.generate_normals()
+	return st.commit()
