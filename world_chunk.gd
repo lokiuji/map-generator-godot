@@ -47,36 +47,34 @@ func _process(_delta):
 		mmi.visible = dist < 160.0
 
 # --- СПІЛЬНА ФУНКЦІЯ ВИСОТИ ---
+# --- Спільна функція висоти з ЕКСКАВАТОРОМ БІОМІВ ---
 func _get_h(nx: float, nz: float) -> float:
-	var c_raw = continent.get_noise_2d(nx, nz) 
 	var h_raw = noise.get_noise_2d(nx, nz)
+	var c_raw = continent.get_noise_2d(nx, nz) 
 	var m_raw = mountain.get_noise_2d(nx, nz)
 	
 	# === 1. БІОМ: ОКЕАНИ ТА МОРЯ ===
 	if c_raw < -0.15: 
-		# Чим нижче c_raw, тим глибший океан (аж до -50 метрів)
 		var ocean_depth = smoothstep(-0.15, -0.6, c_raw)
-		return lerp(2.8, -50.0, ocean_depth)
+		# ЕКСКАВАТОР: фізично копаємо дно до -40 метрів!
+		return lerp(2.8, -40.0, ocean_depth)
 	
-	# Ця змінна робить плавний піщаний пляж на переході від океану до суші
 	var inland_blend = smoothstep(-0.15, 0.0, c_raw)
-	
 	var base_h = (h_raw + 1.0) / 2.0 
 	var py = 0.0
 	
 	# === 2. БІОМ: ОЗЕРА ТА РІЧКИ ===
-	# Якщо шум висоти дуже низький — екскаватор викопує озеро
 	if base_h < 0.25:
 		var lake_depth = smoothstep(0.25, 0.0, base_h)
-		py = lerp(2.8, -15.0, lake_depth)
+		# ЕКСКАВАТОР: викопуємо низини під озера до -12 метрів
+		py = lerp(2.8, -12.0, lake_depth)
 	else:
 		# === 3. БІОМ: СУША ТА ГОРИ ===
-		var terrain_h = pow(base_h, 1.5) * 40.0
-		var mount_h = smoothstep(0.1, 0.8, m_raw) * 200.0
-		# Суша починає рости від рівня води (2.8)
-		py = 2.8 + (terrain_h + mount_h)
+		var terrain_h = pow(base_h, 1.5) * 35.0
+		var mount_h = smoothstep(0.1, 0.8, m_raw) * inland_blend * 200.0
+		py = 2.8 + (terrain_h + mount_h) * inland_blend
 
-	return lerp(2.8, py, inland_blend)
+	return py
 
 func _build_terrain_data_in_thread():
 	var st = SurfaceTool.new()
