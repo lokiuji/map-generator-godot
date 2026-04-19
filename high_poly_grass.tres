@@ -1,5 +1,7 @@
 [gd_resource type="ArrayMesh" format=4 uid="uid://d3twlnrmwjn15"]
 
+[ext_resource type="Material" uid="uid://bbbwlgpfpwl3g" path="res://Materials/grass_mat.tres" id="1_nlfwu"]
+
 [resource]
 _surfaces = [{
 "aabb": AABB(-0.075, 0, 0, 0.15, 0.8, 0.35),
@@ -7,6 +9,7 @@ _surfaces = [{
 "format": 34359742487,
 "index_count": 24,
 "index_data": PackedByteArray("AAABAAIAAQADAAIAAgADAAQAAwAFAAQABAAFAAYABQAHAAYABgAHAAgABwAJAAgA"),
+"material": ExtResource("1_nlfwu"),
 "primitive": 3,
 "uv_scale": Vector4(0, 0, 0, 0),
 "vertex_count": 10,

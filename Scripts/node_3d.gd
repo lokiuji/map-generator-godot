@@ -29,7 +29,7 @@ func _ready():
 	_setup_noises()
 	
 	# ГЕНЕРУЄМО 3D-СІТКУ ТРАВИ КОДОМ! Ніяких зовнішніх файлів!
-	procedural_grass_mesh = _build_grass_mesh()
+	var procedural_grass_mesh = preload("res://high_poly_grass.tres")
 	
 	if not player: player = get_node_or_null("Player")
 	_setup_map_ui()
@@ -52,31 +52,31 @@ func _setup_noises():
 	mountain_noise.seed = 3333
 	mountain_noise.frequency = 0.001 
 
-# --- МАГІЯ: СТВОРЕННЯ МЕШУ ТРАВИ З НУЛЯ ---
-func _build_grass_mesh() -> Mesh:
-	var st = SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var w = 0.4 # Ширина травинки
-	var h = 0.8 # Висота травинки
-	
-	# Площина 1 (Спереду/Ззаду)
-	st.set_uv(Vector2(0, 1)); st.add_vertex(Vector3(-w, 0, 0))
-	st.set_uv(Vector2(1, 1)); st.add_vertex(Vector3(w, 0, 0))
-	st.set_uv(Vector2(1, 0)); st.add_vertex(Vector3(w, h, 0))
-	st.set_uv(Vector2(0, 1)); st.add_vertex(Vector3(-w, 0, 0))
-	st.set_uv(Vector2(1, 0)); st.add_vertex(Vector3(w, h, 0))
-	st.set_uv(Vector2(0, 0)); st.add_vertex(Vector3(-w, h, 0))
-	
-	# Площина 2 (Зліва/Справа) - Перехрестя
-	st.set_uv(Vector2(0, 1)); st.add_vertex(Vector3(0, 0, -w))
-	st.set_uv(Vector2(1, 1)); st.add_vertex(Vector3(0, 0, w))
-	st.set_uv(Vector2(1, 0)); st.add_vertex(Vector3(0, h, w))
-	st.set_uv(Vector2(0, 1)); st.add_vertex(Vector3(0, 0, -w))
-	st.set_uv(Vector2(1, 0)); st.add_vertex(Vector3(0, h, w))
-	st.set_uv(Vector2(0, 0)); st.add_vertex(Vector3(0, h, -w))
-	
-	st.generate_normals()
-	return st.commit()
+## --- МАГІЯ: СТВОРЕННЯ МЕШУ ТРАВИ З НУЛЯ ---
+#func _build_grass_mesh() -> Mesh:
+	#var st = SurfaceTool.new()
+	#st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	#var w = 0.4 # Ширина травинки
+	#var h = 0.8 # Висота травинки
+	#
+	## Площина 1 (Спереду/Ззаду)
+	#st.set_uv(Vector2(0, 1)); st.add_vertex(Vector3(-w, 0, 0))
+	#st.set_uv(Vector2(1, 1)); st.add_vertex(Vector3(w, 0, 0))
+	#st.set_uv(Vector2(1, 0)); st.add_vertex(Vector3(w, h, 0))
+	#st.set_uv(Vector2(0, 1)); st.add_vertex(Vector3(-w, 0, 0))
+	#st.set_uv(Vector2(1, 0)); st.add_vertex(Vector3(w, h, 0))
+	#st.set_uv(Vector2(0, 0)); st.add_vertex(Vector3(-w, h, 0))
+	#
+	## Площина 2 (Зліва/Справа) - Перехрестя
+	#st.set_uv(Vector2(0, 1)); st.add_vertex(Vector3(0, 0, -w))
+	#st.set_uv(Vector2(1, 1)); st.add_vertex(Vector3(0, 0, w))
+	#st.set_uv(Vector2(1, 0)); st.add_vertex(Vector3(0, h, w))
+	#st.set_uv(Vector2(0, 1)); st.add_vertex(Vector3(0, 0, -w))
+	#st.set_uv(Vector2(1, 0)); st.add_vertex(Vector3(0, h, w))
+	#st.set_uv(Vector2(0, 0)); st.add_vertex(Vector3(0, h, -w))
+	#
+	#st.generate_normals()
+	#return st.commit()
 
 # --- ЛОГІКА ІНТЕРФЕЙСУ КАРТИ ---
 func _setup_map_ui():
