@@ -1,14 +1,8 @@
 [gd_scene format=3 uid="uid://jx5besewp0mf"]
 
 [ext_resource type="Script" uid="uid://dcrqfx0nud55j" path="res://Scripts/node_3d.gd" id="1_a202f"]
+[ext_resource type="Material" uid="uid://d28jla4t4xqs3" path="res://Materials/terrain_mat.tres" id="2_a0tk4"]
 [ext_resource type="PackedScene" uid="uid://c7rp4nxgl8faa" path="res://player.tscn" id="2_noarx"]
-[ext_resource type="Script" uid="uid://dac35w7mqoruo" path="res://biom_data.gd" id="3_wc5p8"]
-[ext_resource type="Resource" uid="uid://dgm7x4m2v6w5j" path="res://Biomes/swamp.tres" id="4_jsk3o"]
-[ext_resource type="Resource" uid="uid://v8a3saje32es" path="res://Biomes/desert.tres" id="5_4arys"]
-[ext_resource type="Resource" uid="uid://c0pqla06o6g62" path="res://Biomes/plains.tres" id="6_6iypd"]
-[ext_resource type="Texture2D" uid="uid://brvpjwe5g7igr" path="res://Textures/grass_texture.png" id="7_4arys"]
-[ext_resource type="Texture2D" uid="uid://5rmpxumbmtad" path="res://Textures/leaf_texture.png" id="8_6iypd"]
-[ext_resource type="Texture2D" uid="uid://b6abxj30tg3gq" path="res://Textures/tree_billboard.png" id="8_tereu"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_noarx"]
 sky_top_color = Color(0.28338894, 0.58678764, 0.92809415, 1)
@@ -31,13 +25,11 @@ fog_density = 0.001
 volumetric_fog_density = 0.01
 volumetric_fog_albedo = Color(0.99885863, 0.71651393, 0.4104297, 1)
 
-[node name="Node3D" type="Node3D" unique_id=1770792140]
+[node name="Node3D" type="Node3D" unique_id=1770792140 node_paths=PackedStringArray("player")]
 transform = Transform3D(0.9999619, -0.00012184146, 0.008725685, 0, 0.99990255, 0.01396218, -0.008726535, -0.013961649, 0.99986446, 0, 0, 0)
 script = ExtResource("1_a202f")
-biomes = Array[ExtResource("3_wc5p8")]([ExtResource("4_jsk3o"), ExtResource("5_4arys"), ExtResource("6_6iypd")])
-leaf_texture = ExtResource("8_6iypd")
-grass_texture = ExtResource("7_4arys")
-billboard_tree_texture = ExtResource("8_tereu")
+player = NodePath("Player")
+terrain_material = ExtResource("2_a0tk4")
 
 [node name="Player" parent="." unique_id=2116405228 instance=ExtResource("2_noarx")]
 
@@ -46,6 +38,8 @@ transform = Transform3D(-0.50000006, -0.2961981, 0.81379765, 0, 0.9396926, 0.342
 light_color = Color(0.9160354, 0.89598656, 0.7335008, 1)
 light_energy = 0.3
 shadow_enabled = true
+directional_shadow_mode = 1
+directional_shadow_max_distance = 80.0
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="DirectionalLight3D" unique_id=2007437468]
 environment = SubResource("Environment_noarx")

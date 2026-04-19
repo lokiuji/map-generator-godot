@@ -3,7 +3,10 @@
 [ext_resource type="Script" uid="uid://c05w7bkr03qri" path="res://Prefabs/grass_spawner.gd" id="1_cnmai"]
 [ext_resource type="PackedScene" uid="uid://wth2helmslt1" path="res://Assets/QuaterniusNature/glTF/Grass_Common_Tall.gltf" id="2_t8qgc"]
 
+[sub_resource type="MultiMesh" id="MultiMesh_t8qgc"]
+
 [node name="GrassChunk" type="MultiMeshInstance3D" unique_id=1504970460]
+multimesh = SubResource("MultiMesh_t8qgc")
 
 [node name="GrassSpawner" type="Node3D" parent="." unique_id=870557122]
 script = ExtResource("1_cnmai")

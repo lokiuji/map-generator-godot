@@ -1,87 +1,131 @@
 extends Node3D
 class_name WorldChunk
 
-const CHUNK_SIZE = 120.0
-const WATER_LEVEL = -20.0
-
 var chunk_pos: Vector2
+var chunk_size: float
 var resolution: int
+var moisture: FastNoiseLite
 
-# Ця функція приймає дані від Головного скрипта і будує 3D світ
-func build_from_data(pos: Vector2, res: int, col: bool, data: Dictionary, terrain_mat: Material, water_mat: Material, shared_low_poly_tree: Mesh):
+var thread: Thread
+var terrain_mesh_instance: MeshInstance3D
+
+var grass_scene = preload("res://Assets/QuaterniusNature/glTF/Grass_Common_Short.gltf")
+var grass_mesh: Mesh
+var grass_material = preload("res://Materials/grass_mat.tres") 
+
+# НОВЕ: Змінна для безпечного шуму
+var noise: FastNoiseLite
+
+signal chunk_ready(chunk_node)
+
+func start_generation(pos: Vector2, size: float, res: int, material: Material, global_noise: FastNoiseLite, global_moist: FastNoiseLite):
 	chunk_pos = pos
+	chunk_size = size
 	resolution = res
+	
+	# Отримуємо готовий шум
+	noise = global_noise 
+	moisture = global_moist # Зберігаємо вологість
+	
+	if grass_scene and not grass_mesh:
+		var instance = grass_scene.instantiate()
+		grass_mesh = instance.get_child(0).mesh
+		instance.queue_free()
+	
+	terrain_mesh_instance = MeshInstance3D.new()
+	terrain_mesh_instance.material_override = material
+	add_child(terrain_mesh_instance)
+	
+	thread = Thread.new()
+	thread.start(_build_terrain_data_in_thread)
 
-	# 1. СТВОРЮЄМО ЗЕМЛЮ
-	var land = MeshInstance3D.new()
-	land.mesh = data.mesh
-	land.material_override = terrain_mat
-	if col: 
-		land.create_trimesh_collision()
-	add_child(land)
-
-	# 2. СТВОРЮЄМО ВОДУ
-	if data.needs_water:
-		var water = MeshInstance3D.new()
-		var w_mesh = PlaneMesh.new()
-		w_mesh.size = Vector2(CHUNK_SIZE, CHUNK_SIZE)
-		w_mesh.subdivide_width = 40 
-		w_mesh.subdivide_depth = 40
-		water.mesh = w_mesh
-		water.global_position = Vector3(chunk_pos.x * CHUNK_SIZE + CHUNK_SIZE/2.0, WATER_LEVEL, chunk_pos.y * CHUNK_SIZE + CHUNK_SIZE/2.0)
-		water.material_override = water_mat
-		add_child(water)
-
-	# 3. СТВОРЮЄМО РОСЛИННІСТЬ ТА LOD
-	for mesh in data.v_trans.keys():
-		var transforms = data.v_trans[mesh]
-		var type = data.v_types[mesh]
-		
-		if transforms.size() > 0:
-			var mmi = MultiMeshInstance3D.new()
-			var mm = MultiMesh.new()
-			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.instance_count = transforms.size()
-			mm.mesh = mesh
+func _build_terrain_data_in_thread():
+	var st = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	
+	var step = chunk_size / resolution
+	var offset_x = chunk_pos.x * chunk_size
+	var offset_z = chunk_pos.y * chunk_size
+	
+	var rng = RandomNumberGenerator.new()
+	rng.seed = hash(str(chunk_pos))
+	
+	var grass_transforms = []
+	
+	for z in range(resolution + 1):
+		for x in range(resolution + 1):
+			var world_x = offset_x + x * step
+			var world_z = offset_z + z * step
 			
-			for i in range(transforms.size()):
-				mm.set_instance_transform(i, transforms[i])
-			mmi.multimesh = mm
+			# Тепер це працюватиме ідеально, бо шум згенеровано правильно!
+			var py = noise.get_noise_2d(world_x, world_z) * 20.0
 			
-			# БЛОК 1: Видимість трави
-			if type == "grass" or type == "flowers" or type == "mushrooms":
-				mmi.visibility_range_end = 80.0 # Трава зникає трохи далі
-				mmi.visibility_range_end_margin = 15.0 # Плавне розчинення (Cross-fade)
-				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF 
-				
-			elif type == "trees":
-				# ЄДИНИЙ ПРАВИЛЬНИЙ LOD ДЛЯ ВСІХ ЧАНКІВ
-				# 3D дерева видно тільки від 0 до 70 метрів. Далі вони зникають і не їдять FPS.
-				mmi.visibility_range_end = 70.0 
-				mmi.visibility_range_end_margin = 0.0 # Жорстке відсікання без накладань!
-				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-				mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-				
-				_add_low_poly_trees(transforms, shared_low_poly_tree)
+			st.set_uv(Vector2(float(x) / resolution, float(z) / resolution))
+			st.add_vertex(Vector3(x * step, py, z * step))
+			
+			if x < resolution and z < resolution:
+				for i in range(12):
+					var gx = world_x + rng.randf() * step
+					var gz = world_z + rng.randf() * step
 					
-			add_child(mmi)
+					var g_py = noise.get_noise_2d(gx, gz) * 30.0 # Висота
+					var g_moist = moisture.get_noise_2d(gx, gz) # Вологість (від -1 до 1)
+					
+					# ПРАВИЛА БІОМІВ:
+					# 1. Вище 2.0 (не у воді)
+					# 2. Нижче 12.0 (не на скелях)
+					# 3. Вологість > 0.1 (тільки у вологих зонах!)
+					if g_py > 2.0 and g_py < 12.0 and g_moist > 0.1: 
+						var pos = Vector3(gx - offset_x, g_py, gz - offset_z)
+						var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU)
+						basis = basis.scaled(Vector3.ONE * rng.randf_range(0.8, 1.5))
+						grass_transforms.append(Transform3D(basis, pos))
+					
+					if g_py > 1.0: 
+						var pos = Vector3(gx - offset_x, g_py, gz - offset_z)
+						var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU)
+						basis = basis.scaled(Vector3.ONE * rng.randf_range(0.8, 1.5))
+						grass_transforms.append(Transform3D(basis, pos))
+			
+	for z in range(resolution):
+		for x in range(resolution):
+			var i = x + z * (resolution + 1)
+			st.add_index(i)
+			st.add_index(i + 1)
+			st.add_index(i + resolution + 1)
+			st.add_index(i + 1)
+			st.add_index(i + resolution + 2)
+			st.add_index(i + resolution + 1)
+			
+	st.generate_normals()
+	var array_mesh = st.commit()
+	
+	call_deferred("_on_thread_finished", {"mesh": array_mesh, "grass": grass_transforms})
 
-func _add_low_poly_trees(transforms: Array, shared_low_poly_tree: Mesh):
-	var mmi_low = MultiMeshInstance3D.new()
-	var mm_low = MultiMesh.new()
-	mm_low.transform_format = MultiMesh.TRANSFORM_3D
-	mm_low.instance_count = transforms.size()
-	mm_low.mesh = shared_low_poly_tree 
+func _on_thread_finished(data: Dictionary):
+	thread.wait_to_finish() 
 	
-	for i in range(transforms.size()):
-		mm_low.set_instance_transform(i, transforms[i])
+	terrain_mesh_instance.mesh = data["mesh"]
+	terrain_mesh_instance.create_trimesh_collision()
 	
-	mmi_low.multimesh = mm_low
-	# Білборди з'являються рівно там, де зникають 3D дерева
-	mmi_low.visibility_range_begin = 70.0 
-	mmi_low.visibility_range_begin_margin = 0.0 # Жорстке відсікання! Впритул їх ніколи не буде видно.
-	mmi_low.visibility_range_end = 1200.0 
-	mmi_low.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF 
-	mmi_low.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	if grass_mesh and data["grass"].size() > 0:
+		var mmi = MultiMeshInstance3D.new()
+		var mm = MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.instance_count = data["grass"].size()
+		mm.mesh = grass_mesh
+		mmi.material_override = grass_material 
+		
+		for i in range(data["grass"].size()):
+			mm.set_instance_transform(i, data["grass"][i])
+			
+		add_child(mmi)
 	
-	add_child(mmi_low)
+	chunk_ready.emit(self)
+# --- ЗАХИСТ ВІД КРАШІВ ---
+# Ця функція спрацьовує, коли Світовий Менеджер вирішує видалити цей чанк (бо гравець втік далеко)
+func _exit_tree():
+	# Якщо потік ще працює, ми наказуємо рушію дочекатися його завершення, 
+	# і тільки ПОТІМ видаляти змінні та сам чанк із пам'яті.
+	if thread and thread.is_started():
+		thread.wait_to_finish()
