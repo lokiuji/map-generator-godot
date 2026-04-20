@@ -4,6 +4,7 @@
 [ext_resource type="Material" uid="uid://d28jla4t4xqs3" path="res://Materials/terrain_mat.tres" id="2_a0tk4"]
 [ext_resource type="PackedScene" uid="uid://c7rp4nxgl8faa" path="res://player.tscn" id="2_noarx"]
 [ext_resource type="PackedScene" uid="uid://dj32w4116jqry" path="res://map_ui.tscn" id="3_r3fl7"]
+[ext_resource type="Script" uid="uid://7o3byy5dbq5c" path="res://map_ui.gd" id="5_jka67"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_noarx"]
 sky_top_color = Color(0.28338894, 0.58678764, 0.92809415, 1)
@@ -32,9 +33,8 @@ script = ExtResource("1_a202f")
 player = NodePath("Player")
 terrain_material = ExtResource("2_a0tk4")
 
-[node name="MapUI" parent="." unique_id=1628385544 instance=ExtResource("3_r3fl7")]
-
 [node name="Player" parent="." unique_id=2116405228 groups=["player"] instance=ExtResource("2_noarx")]
+transform = Transform3D(1.0000001, 1.4551915e-11, -9.313226e-10, 0, 1.0000001, 0, 0, 0, 1.0000001, 3000, 400, 3000)
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1011212661]
 transform = Transform3D(-0.50000006, -0.2961981, 0.81379765, 0, 0.9396926, 0.34202012, -0.8660254, 0.17101008, -0.46984637, 0, 0, 0)
@@ -46,3 +46,6 @@ directional_shadow_max_distance = 80.0
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="DirectionalLight3D" unique_id=2007437468]
 environment = SubResource("Environment_noarx")
+
+[node name="MapUI" parent="." unique_id=1628385544 instance=ExtResource("3_r3fl7")]
+script = ExtResource("5_jka67")

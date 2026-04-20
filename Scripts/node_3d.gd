@@ -1,7 +1,7 @@
 extends Node3D
 
 const CHUNK_SIZE = 120.0
-const RENDER_DISTANCE = 4
+const RENDER_DISTANCE = 3
 
 @export var player: Node3D
 @export var terrain_material: Material
@@ -32,14 +32,18 @@ var chunk_database = {}
 func _ready():
 	_setup_noises()
 	
-	# === МАГІЯ: Збираємо 3 площини для текстури прямо тут ===
 	procedural_grass_mesh = _build_grass_mesh()
 	
 	if player:
 		player.process_mode = Node.PROCESS_MODE_DISABLED 
+		
+		# === 2. ФІКС СПАВНУ: КИДАЄМО ГРАВЦЯ В ЦЕНТР СВІТУ ===
+		# Центр світу 6000x6000 - це точка (3000, 3000). 
+		# Висоту ставимо 400, щоб точно впасти на гору, а не під неї.
+		player.global_position = Vector3(3000.0, 400.0, 3000.0)
+		
 		current_player_chunk = Vector2(floor(player.global_position.x / CHUNK_SIZE), floor(player.global_position.z / CHUNK_SIZE))
 		update_chunks(current_player_chunk)
-
 func _setup_noises():
 	global_noise = FastNoiseLite.new()
 	global_noise.seed = 1234
