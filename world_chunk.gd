@@ -1,5 +1,6 @@
 extends Node3D
 class_name WorldChunk
+
 # === РОЗМІРИ СВІТУ ===
 const WORLD_CHUNKS = 50
 const CHUNK_SIZE = 120.0
@@ -8,7 +9,7 @@ const WORLD_SIZE_METERS = WORLD_CHUNKS * CHUNK_SIZE # 6000.0 метрів
 # === ШУМИ ===
 var noise_continent = FastNoiseLite.new()
 var noise_mountain = FastNoiseLite.new()
-var noise_moisture = FastNoiseLite.new() # Для трави/пустель (якщо в тебе він був)
+var noise_moisture = FastNoiseLite.new() # Для трави/пустель
 
 var chunk_pos: Vector2
 var chunk_size: float
@@ -31,11 +32,10 @@ signal chunk_ready(chunk_node)
 
 func _ready():
 	# 1. КОНТИНЕНТИ: Частота 0.0004-0.0005 на 6000м дає ~6-9 великих об'єктів.
-	# Це ідеально для твого запиту про "7 континентів".
 	noise_continent.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	noise_continent.frequency = 0.00045 
 	noise_continent.fractal_octaves = 4
-	noise_continent.seed = 777 # Можеш міняти сід, щоб знайти найкращу форму
+	noise_continent.seed = 777 
 
 	# 2. ГОРИ: Робимо їх вузькими хребтами
 	noise_mountain.noise_type = FastNoiseLite.TYPE_SIMPLEX
@@ -73,9 +73,7 @@ func _process(_delta):
 		var dist = global_position.distance_to(player_ref.global_position)
 		mmi.visible = dist < 160.0
 
-# --- СПІЛЬНА ФУНКЦІЯ ВИСОТИ ---
 # --- Спільна функція висоти з ЕКСКАВАТОРОМ БІОМІВ ---
-
 func _get_h(world_x: float, world_z: float) -> float:
 	var logic_x = wrapf(world_x, 0.0, WORLD_SIZE_METERS)
 	var logic_z = wrapf(world_z, 0.0, WORLD_SIZE_METERS)
@@ -91,14 +89,12 @@ func _get_h(world_x: float, world_z: float) -> float:
 	if cont_val < 0.0:
 		base_height = cont_val * 60.0 # Глибина океану
 	else:
-		# ПЛАВНИЙ ПІДЙОМ: pow(cont_val, 0.5) робить береги крутішими, 
-		# а центр материка вищим і горбистим (до 140 метрів)
+		# ПЛАВНИЙ ПІДЙОМ: pow(cont_val, 0.5) робить береги крутішими
 		base_height = pow(cont_val, 0.5) * 140.0
 
 	var mount_val = noise_mountain.get_noise_2d(logic_x, logic_z)
 	
-	# МАСКА ГІР: Гори ростуть тільки в глибині (cont_val > 0.3)
-	# Це звільняє 70% суші під рівнини та ліси
+	# МАСКА ГІР: Гори ростуть тільки в глибині
 	var mountain_mask = smoothstep(0.3, 0.6, cont_val)
 	var final_mountain_height = mount_val * 450.0 * mountain_mask 
 
@@ -121,9 +117,13 @@ func _build_terrain_data_in_thread():
 		for x in range(resolution + 1):
 			var world_x = offset_x + x * step
 			var world_z = offset_z + z * step
+			
+			var logic_x = wrapf(world_x, 0.0, WORLD_SIZE_METERS)
+			var logic_z = wrapf(world_z, 0.0, WORLD_SIZE_METERS)
+			
 			var py = _get_h(world_x, world_z)
-			var moist = moisture.get_noise_2d(world_x, world_z)
-			var cell_cont = continent.get_noise_2d(world_x, world_z)
+			var moist = moisture.get_noise_2d(logic_x, logic_z)
+			var cell_cont = continent.get_noise_2d(logic_x, logic_z)
 
 			st.set_color(Color(moist, 0, 0))
 			st.set_uv(Vector2(float(x) / resolution, float(z) / resolution))
@@ -146,9 +146,11 @@ func _build_terrain_data_in_thread():
 							var gz = world_z + local_z * step
 							var g_py = 0.0
 							
-							if local_x + local_z <= 1.0: g_py = h00 + local_x * (h10 - h00) + local_z * (h01 - h00)
+							if local_x + local_z <= 1.0: 
+								g_py = h00 + local_x * (h10 - h00) + local_z * (h01 - h00)
 							else:
-								var nx = 1.0 - local_x; var nz = 1.0 - local_z
+								var nx = 1.0 - local_x
+								var nz = 1.0 - local_z
 								g_py = h11 + nx * (h01 - h11) + nz * (h10 - h11)
 								
 							g_py -= 0.1 
@@ -162,8 +164,12 @@ func _build_terrain_data_in_thread():
 	for z in range(resolution):
 		for x in range(resolution):
 			var i = x + z * (resolution + 1)
-			st.add_index(i); st.add_index(i + 1); st.add_index(i + resolution + 1)
-			st.add_index(i + 1); st.add_index(i + resolution + 2); st.add_index(i + resolution + 1)
+			st.add_index(i)
+			st.add_index(i + 1)
+			st.add_index(i + resolution + 1)
+			st.add_index(i + 1)
+			st.add_index(i + resolution + 2)
+			st.add_index(i + resolution + 1)
 	st.generate_normals()
 	
 	# === НОВЕ: ГЕНЕРАЦІЯ "РОЗУМНОЇ" ВОДИ ===
@@ -179,25 +185,30 @@ func _build_terrain_data_in_thread():
 				var world_wx = offset_x + wx * w_step
 				var world_wz = offset_z + wz * w_step
 				
-				# 1. Читаємо шум континентів у цій точці
-				var w_c_raw = continent.get_noise_2d(world_wx, world_wz)
+				var logic_wx = wrapf(world_wx, 0.0, WORLD_SIZE_METERS)
+				var logic_wz = wrapf(world_wz, 0.0, WORLD_SIZE_METERS)
 				
-				# 2. МАСКА БІОМІВ: 
-				# Якщо c_raw = -0.3 (Глибокий океан) -> wave_mask = 1.0 (Максимальні хвилі)
-				# Якщо c_raw = -0.1 (Близько до берега) або більше (Озера) -> wave_mask = 0.0 (Гладка вода)
+				# 1. Читаємо шум континентів у цій точці
+				var w_c_raw = continent.get_noise_2d(logic_wx, logic_wz)
+				
+				# 2. МАСКА БІОМІВ
 				var wave_mask = smoothstep(-0.10, -0.30, w_c_raw)
 				
 				# 3. Записуємо маску в червоний канал кольору вершини (COLOR.r)
 				w_st.set_color(Color(wave_mask, 0, 0))
 				w_st.set_uv(Vector2(float(wx) / w_res, float(wz) / w_res))
-				# Вода генерується вже в правильних координатах чанка, тому без зміщень
+				# Вода генерується вже в правильних координатах чанка
 				w_st.add_vertex(Vector3(wx * w_step, 2.8, wz * w_step))
 				
 		for wz in range(w_res):
 			for wx in range(w_res):
 				var i = wx + wz * (w_res + 1)
-				w_st.add_index(i); w_st.add_index(i + 1); w_st.add_index(i + w_res + 1)
-				w_st.add_index(i + 1); w_st.add_index(i + w_res + 2); w_st.add_index(i + w_res + 1)
+				w_st.add_index(i)
+				w_st.add_index(i + 1)
+				w_st.add_index(i + w_res + 1)
+				w_st.add_index(i + 1)
+				w_st.add_index(i + w_res + 2)
+				w_st.add_index(i + w_res + 1)
 		w_st.generate_normals()
 		water_mesh_data = w_st.commit()
 

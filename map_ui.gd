@@ -13,10 +13,13 @@ func _ready():
 	if not map_texture or not player_marker:
 		push_error("ПОМИЛКА: Вузли мапи не знайдені! Перевір ієрархію в MapUI.tscn")
 		return
+	
 	noise_continent.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise_continent.frequency = 0.0005 
+	# ФІКС: Частота ТЕПЕР ІДЕАЛЬНО ЗБІГАЄТЬСЯ З world_chunk.gd (було 0.0005)
+	noise_continent.frequency = 0.00045 
 	noise_continent.seed = 777
 	noise_continent.fractal_octaves = 4
+	
 	map_texture.custom_minimum_size = Vector2(600, 600)
 	map_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	map_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -29,7 +32,6 @@ func _input(event):
 			_generate_map_image()
 			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if visible else Input.MOUSE_MODE_CAPTURED)
 		else:
-			# Якщо мапа закрилася на "M" - ХОВАЄМО мишку і повертаємо камеру
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 	if visible and event is InputEventMouseButton and event.pressed:
@@ -38,19 +40,18 @@ func _input(event):
 
 func _generate_map_image():
 	var img = Image.create(MAP_RES, MAP_RES, false, Image.FORMAT_RGB8)
-	var center = WORLD_SIZE / 2.0 # Центр мапи
+	var center = WORLD_SIZE / 2.0
 	
 	for y in range(MAP_RES):
 		for x in range(MAP_RES):
 			var wx = (float(x) / MAP_RES) * WORLD_SIZE
 			var wz = (float(y) / MAP_RES) * WORLD_SIZE
 			
-			# === ФІКС: ДОДАЄМО РАДІАЛЬНУ МАСКУ НА UI МАПУ ===
 			var dist_from_center = Vector2(wx, wz).distance_to(Vector2(center, center))
 			var edge_falloff = 1.0 - smoothstep(center * 0.7, center * 0.98, dist_from_center)
 			
 			var v = noise_continent.get_noise_2d(wx, wz)
-			v = lerp(-1.0, v, edge_falloff) # Топимо береги, як у 3D світі
+			v = lerp(-1.0, v, edge_falloff)
 			
 			var col = Color.DARK_BLUE 
 			if v > -0.15: col = Color.CORNFLOWER_BLUE 
@@ -63,23 +64,27 @@ func _generate_map_image():
 	map_texture.texture = ImageTexture.create_from_image(img)
 
 func _teleport_to_map_point(_mouse_pos):
-	# Беремо координати мишки ЛОКАЛЬНО всередині самої картинки мапи!
 	var local_mouse = map_texture.get_local_mouse_position()
 	
-	# Перевіряємо, чи клікнули ми саме по картинці (а не повз неї)
-	if local_mouse.x >= 0 and local_mouse.x <= map_texture.size.x and \
-	   local_mouse.y >= 0 and local_mouse.y <= map_texture.size.y:
+	var s = min(map_texture.size.x, map_texture.size.y)
+	var offset_x = (map_texture.size.x - s) / 2.0
+	var offset_y = (map_texture.size.y - s) / 2.0
+	
+	var img_x = local_mouse.x - offset_x
+	var img_y = local_mouse.y - offset_y
+	
+	if img_x >= 0 and img_x <= s and img_y >= 0 and img_y <= s:
+		var percent_x = img_x / s
+		var percent_y = img_y / s
 		
-		# Рахуємо відсоток кліку (від 0.0 до 1.0)
-		var percent_x = local_mouse.x / map_texture.size.x
-		var percent_y = local_mouse.y / map_texture.size.y
-		
-		# Переводимо у світові координати
 		var target_x = percent_x * WORLD_SIZE
 		var target_z = percent_y * WORLD_SIZE
 		
 		if player:
+			# Кидаємо гравця з висоти, щоб він не опинився під землею
 			player.global_position = Vector3(target_x, 400.0, target_z)
+			# Скидаємо вертикальну швидкість, щоб він плавно падав на новий чанк
+			player.velocity.y = 0.0 
 			visible = false
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
@@ -87,12 +92,17 @@ func _process(_delta):
 	if not visible or not player or map_texture == null or player_marker == null:
 		return
 		
-	# Знаходимо відсоток позиції гравця у світі (від 0.0 до 1.0)
 	var percent_x = wrapf(player.global_position.x, 0.0, WORLD_SIZE) / WORLD_SIZE
 	var percent_z = wrapf(player.global_position.z, 0.0, WORLD_SIZE) / WORLD_SIZE
 	
-	# Ставимо маркер ЛОКАЛЬНО відносно картинки мапи
-	player_marker.position = Vector2(
-		percent_x * map_texture.size.x,
-		percent_z * map_texture.size.y
+	var s = min(map_texture.size.x, map_texture.size.y)
+	var offset_x = (map_texture.size.x - s) / 2.0
+	var offset_y = (map_texture.size.y - s) / 2.0
+	
+	# ФІКС: Використовуємо глобальну позицію для маркера, щоб він не з'їжджав
+	# залежно від того, як розташований TextureRect у сцені
+	var tex_global = map_texture.global_position
+	player_marker.global_position = tex_global + Vector2(
+		offset_x + (percent_x * s),
+		offset_y + (percent_z * s)
 	) - (player_marker.size / 2.0)

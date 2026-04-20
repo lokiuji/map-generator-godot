@@ -31,36 +31,12 @@ func _input(event):
 			fly_mode = !fly_mode
 			collision.disabled = fly_mode
 
-# ГОЛОВНИЙ ДИСПЕТЧЕР (який у тебе загубився)
 func _physics_process(delta):
 	var underwater = camera.global_position.y < water_level
 	if fly_mode:
 		_process_fly_mode(delta)
 	else:
 		_process_walk_mode(delta, underwater)
-	# === ТОРОЇДАЛЬНА ТЕЛЕПОРТАЦІЯ (Ефект Пакмана) ===
-	var world_size = 6000.0 # 50 чанків по 120м
-	
-	var teleported = false
-	var new_pos = global_position
-	
-	# Якщо вийшли за межі — перекидаємо на протилежний бік
-	if global_position.x < 0.0:
-		new_pos.x += world_size
-		teleported = true
-	elif global_position.x > world_size:
-		new_pos.x -= world_size
-		teleported = true
-		
-	if global_position.z < 0.0:
-		new_pos.z += world_size
-		teleported = true
-	elif global_position.z > world_size:
-		new_pos.z -= world_size
-		teleported = true
-		
-	if teleported:
-		global_position = new_pos
 
 func _process_fly_mode(delta):
 	var fly_speed = 80.0
