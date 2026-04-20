@@ -38,10 +38,10 @@ func _generate_map_image():
 			var v = noise_continent.get_noise_2d(wx, wz)
 			
 			var col = Color.DARK_BLUE 
-			if v > -0.15: col = Color.CORNFLOWER_BLUE 
-			if v > 0.0: col = Color.PALE_GOLDENROD 
-			if v > 0.1: col = Color.FOREST_GREEN 
-			if v > 0.35: col = Color.SLATE_GRAY 
+			if v > -0.15: col = Color.CORNFLOWER_BLUE # Шельф
+			if v > 0.0: col = Color.PALE_GOLDENROD # Пляж
+			if v > 0.03: col = Color.FOREST_GREEN # Рівнина (суша)
+			if v > 0.35: col = Color.SLATE_GRAY # Гірські хребти
 			
 			img.set_pixel(x, y, col)
 	

@@ -34,16 +34,6 @@ terrain_material = ExtResource("2_a0tk4")
 
 [node name="MapUI" parent="." unique_id=1628385544 instance=ExtResource("3_r3fl7")]
 
-[node name="CenterContainer" type="CenterContainer" parent="MapUI" unique_id=1515425828]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-size_flags_horizontal = 6
-size_flags_vertical = 6
-metadata/_edit_use_anchors_ = true
-
 [node name="Player" parent="." unique_id=2116405228 groups=["player"] instance=ExtResource("2_noarx")]
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1011212661]

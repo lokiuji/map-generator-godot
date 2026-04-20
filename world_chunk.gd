@@ -30,15 +30,17 @@ var mmi: MultiMeshInstance3D
 signal chunk_ready(chunk_node)
 
 func _ready():
-	# 1. КОНТИНЕНТИ: Частота 0.0005 дає приблизно 5-9 великих об'єктів на 6км
+	# 1. КОНТИНЕНТИ: Частота 0.0004-0.0005 на 6000м дає ~6-9 великих об'єктів.
+	# Це ідеально для твого запиту про "7 континентів".
 	noise_continent.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise_continent.frequency = 0.0005 
+	noise_continent.frequency = 0.00045 
 	noise_continent.fractal_octaves = 4
+	noise_continent.seed = 777 # Можеш міняти сід, щоб знайти найкращу форму
 
-	# 2. ГОРИ: Робимо їх дуже високими, але рідкісними
+	# 2. ГОРИ: Робимо їх вузькими хребтами
 	noise_mountain.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise_mountain.frequency = 0.002
-	noise_mountain.fractal_type = FastNoiseLite.FRACTAL_RIDGED # Виправлено друкарську помилку
+	noise_mountain.frequency = 0.002 # Вища частота для деталей
+	noise_mountain.fractal_type = FastNoiseLite.FRACTAL_RIDGED 
 	noise_mountain.fractal_octaves = 5
 	
 	# Вологість (для біомів)
@@ -75,44 +77,32 @@ func _process(_delta):
 # --- Спільна функція висоти з ЕКСКАВАТОРОМ БІОМІВ ---
 
 func _get_h(world_x: float, world_z: float) -> float:
-	# === 1. МАГІЯ ЗГОРТАННЯ КООРДИНАТ (Wraparound) ===
-	# Координати завжди залишаються в межах від 0 до 6000
 	var logic_x = wrapf(world_x, 0.0, WORLD_SIZE_METERS)
 	var logic_z = wrapf(world_z, 0.0, WORLD_SIZE_METERS)
 
-	# === 2. РАДІАЛЬНА МАСКА (КРАЙ СВІТУ = ОКЕАН) ===
 	var center = WORLD_SIZE_METERS / 2.0
 	var dist_from_center = Vector2(logic_x, logic_z).distance_to(Vector2(center, center))
-	
-	# Світ почне тонути в океані, коли гравець пройде 65% шляху від центру до краю
-	var edge_falloff = 1.0 - smoothstep(center * 0.65, center * 0.95, dist_from_center)
+	var edge_falloff = 1.0 - smoothstep(center * 0.7, center * 0.98, dist_from_center)
 
-	# === 3. ФОРМУВАННЯ КОНТИНЕНТІВ ===
 	var cont_val = noise_continent.get_noise_2d(logic_x, logic_z)
-	
-	# Примусово "тягнемо" висоту на дно океану (-1.0) біля країв світу
 	cont_val = lerp(-1.0, cont_val, edge_falloff) 
-	var base_height = cont_val * 120.0
 
-	# === 4. ГІРСЬКІ ХРЕБТИ ===
+	var base_height = 0.0
+	if cont_val < 0.0:
+		base_height = cont_val * 60.0 # Глибина океану
+	else:
+		# ПЛАВНИЙ ПІДЙОМ: pow(cont_val, 0.5) робить береги крутішими, 
+		# а центр материка вищим і горбистим (до 140 метрів)
+		base_height = pow(cont_val, 0.5) * 140.0
+
 	var mount_val = noise_mountain.get_noise_2d(logic_x, logic_z)
 	
-	# Маска: Гори ростуть ТІЛЬКИ на суші (де cont_val > 0.0).
-	var mountain_mask = smoothstep(0.15, 0.45, cont_val)
-	# Гори будуть величними: до 500 метрів у висоту
-	var final_mountain_height = mount_val * 600.0 * mountain_mask 
+	# МАСКА ГІР: Гори ростуть тільки в глибині (cont_val > 0.3)
+	# Це звільняє 70% суші під рівнини та ліси
+	var mountain_mask = smoothstep(0.3, 0.6, cont_val)
+	var final_mountain_height = mount_val * 450.0 * mountain_mask 
 
-	# === 5. ФІНАЛЬНИЙ РЕЛЬЄФ ТА "ЕКСКАВАТОР" ===
-	var water_level = 2.8
-	var final_y = water_level + base_height + final_mountain_height
-
-	if final_y < water_level:
-		# Фізично копаємо глибокі океанські западини (до -40 метрів)
-		# Це необхідно для роботи шейдера води з ефектом глибини (Beer's Law)
-		var dig = smoothstep(water_level, water_level - 15.0, final_y)
-		final_y = lerp(final_y, water_level - 40.0, dig)
-
-	return final_y
+	return 2.8 + base_height + final_mountain_height
 
 func _build_terrain_data_in_thread():
 	var st = SurfaceTool.new()
