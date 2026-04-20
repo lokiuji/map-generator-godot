@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://dcrqfx0nud55j" path="res://Scripts/node_3d.gd" id="1_a202f"]
 [ext_resource type="Material" uid="uid://d28jla4t4xqs3" path="res://Materials/terrain_mat.tres" id="2_a0tk4"]
 [ext_resource type="PackedScene" uid="uid://c7rp4nxgl8faa" path="res://player.tscn" id="2_noarx"]
+[ext_resource type="PackedScene" uid="uid://dj32w4116jqry" path="res://map_ui.tscn" id="3_r3fl7"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_noarx"]
 sky_top_color = Color(0.28338894, 0.58678764, 0.92809415, 1)
@@ -31,7 +32,19 @@ script = ExtResource("1_a202f")
 player = NodePath("Player")
 terrain_material = ExtResource("2_a0tk4")
 
-[node name="Player" parent="." unique_id=2116405228 instance=ExtResource("2_noarx")]
+[node name="MapUI" parent="." unique_id=1628385544 instance=ExtResource("3_r3fl7")]
+
+[node name="CenterContainer" type="CenterContainer" parent="MapUI" unique_id=1515425828]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 6
+size_flags_vertical = 6
+metadata/_edit_use_anchors_ = true
+
+[node name="Player" parent="." unique_id=2116405228 groups=["player"] instance=ExtResource("2_noarx")]
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1011212661]
 transform = Transform3D(-0.50000006, -0.2961981, 0.81379765, 0, 0.9396926, 0.34202012, -0.8660254, 0.17101008, -0.46984637, 0, 0, 0)

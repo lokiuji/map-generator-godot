@@ -24,6 +24,18 @@ var map_zoom = 18.0
 var map_offset = Vector2.ZERO 
 var is_dragging_map = false
 
+var chunk_database = {}
+# Приклад того, як це працюватиме:
+# func save_building(chunk_pos: Vector2, building_data: Dictionary):
+#     # Перетворюємо візуальну позицію на логічну (від 0 до 50)
+#     var logic_x = wrapi(int(chunk_pos.x), 0, 50)
+#     var logic_y = wrapi(int(chunk_pos.y), 0, 50)
+#     var logic_pos = Vector2(logic_x, logic_y)
+#     
+#     if not chunk_database.has(logic_pos):
+#         chunk_database[logic_pos] = []
+#     chunk_database[logic_pos].append(building_data)
+
 func _ready():
 	_setup_noises()
 	

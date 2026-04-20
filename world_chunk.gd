@@ -1,5 +1,14 @@
 extends Node3D
 class_name WorldChunk
+# === РОЗМІРИ СВІТУ ===
+const WORLD_CHUNKS = 50
+const CHUNK_SIZE = 120.0
+const WORLD_SIZE_METERS = WORLD_CHUNKS * CHUNK_SIZE # 6000.0 метрів
+
+# === ШУМИ ===
+var noise_continent = FastNoiseLite.new()
+var noise_mountain = FastNoiseLite.new()
+var noise_moisture = FastNoiseLite.new() # Для трави/пустель (якщо в тебе він був)
 
 var chunk_pos: Vector2
 var chunk_size: float
@@ -19,6 +28,22 @@ var player_ref: Node3D
 var mmi: MultiMeshInstance3D 
 
 signal chunk_ready(chunk_node)
+
+func _ready():
+	# 1. КОНТИНЕНТИ: Частота 0.0005 дає приблизно 5-9 великих об'єктів на 6км
+	noise_continent.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise_continent.frequency = 0.0005 
+	noise_continent.fractal_octaves = 4
+
+	# 2. ГОРИ: Робимо їх дуже високими, але рідкісними
+	noise_mountain.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise_mountain.frequency = 0.002
+	noise_mountain.fractal_type = FastNoiseLite.FRACTAL_RIDGED # Виправлено друкарську помилку
+	noise_mountain.fractal_octaves = 5
+	
+	# Вологість (для біомів)
+	noise_moisture.frequency = 0.0005
+	noise_moisture.seed = 999
 
 func start_generation(pos: Vector2, size: float, res: int, material: Material, 
 	g_noise: FastNoiseLite, g_moist: FastNoiseLite, g_mount: FastNoiseLite, 
@@ -48,33 +73,46 @@ func _process(_delta):
 
 # --- СПІЛЬНА ФУНКЦІЯ ВИСОТИ ---
 # --- Спільна функція висоти з ЕКСКАВАТОРОМ БІОМІВ ---
-func _get_h(nx: float, nz: float) -> float:
-	var h_raw = noise.get_noise_2d(nx, nz)
-	var c_raw = continent.get_noise_2d(nx, nz) 
-	var m_raw = mountain.get_noise_2d(nx, nz)
-	
-	# === 1. БІОМ: ОКЕАНИ ТА МОРЯ ===
-	if c_raw < -0.15: 
-		var ocean_depth = smoothstep(-0.15, -0.6, c_raw)
-		# ЕКСКАВАТОР: фізично копаємо дно до -40 метрів!
-		return lerp(2.8, -40.0, ocean_depth)
-	
-	var inland_blend = smoothstep(-0.15, 0.0, c_raw)
-	var base_h = (h_raw + 1.0) / 2.0 
-	var py = 0.0
-	
-	# === 2. БІОМ: ОЗЕРА ТА РІЧКИ ===
-	if base_h < 0.25:
-		var lake_depth = smoothstep(0.25, 0.0, base_h)
-		# ЕКСКАВАТОР: викопуємо низини під озера до -12 метрів
-		py = lerp(2.8, -12.0, lake_depth)
-	else:
-		# === 3. БІОМ: СУША ТА ГОРИ ===
-		var terrain_h = pow(base_h, 1.5) * 35.0
-		var mount_h = smoothstep(0.1, 0.8, m_raw) * inland_blend * 200.0
-		py = 2.8 + (terrain_h + mount_h) * inland_blend
 
-	return py
+func _get_h(world_x: float, world_z: float) -> float:
+	# === 1. МАГІЯ ЗГОРТАННЯ КООРДИНАТ (Wraparound) ===
+	# Координати завжди залишаються в межах від 0 до 6000
+	var logic_x = wrapf(world_x, 0.0, WORLD_SIZE_METERS)
+	var logic_z = wrapf(world_z, 0.0, WORLD_SIZE_METERS)
+
+	# === 2. РАДІАЛЬНА МАСКА (КРАЙ СВІТУ = ОКЕАН) ===
+	var center = WORLD_SIZE_METERS / 2.0
+	var dist_from_center = Vector2(logic_x, logic_z).distance_to(Vector2(center, center))
+	
+	# Світ почне тонути в океані, коли гравець пройде 65% шляху від центру до краю
+	var edge_falloff = 1.0 - smoothstep(center * 0.65, center * 0.95, dist_from_center)
+
+	# === 3. ФОРМУВАННЯ КОНТИНЕНТІВ ===
+	var cont_val = noise_continent.get_noise_2d(logic_x, logic_z)
+	
+	# Примусово "тягнемо" висоту на дно океану (-1.0) біля країв світу
+	cont_val = lerp(-1.0, cont_val, edge_falloff) 
+	var base_height = cont_val * 120.0
+
+	# === 4. ГІРСЬКІ ХРЕБТИ ===
+	var mount_val = noise_mountain.get_noise_2d(logic_x, logic_z)
+	
+	# Маска: Гори ростуть ТІЛЬКИ на суші (де cont_val > 0.0).
+	var mountain_mask = smoothstep(0.15, 0.45, cont_val)
+	# Гори будуть величними: до 500 метрів у висоту
+	var final_mountain_height = mount_val * 600.0 * mountain_mask 
+
+	# === 5. ФІНАЛЬНИЙ РЕЛЬЄФ ТА "ЕКСКАВАТОР" ===
+	var water_level = 2.8
+	var final_y = water_level + base_height + final_mountain_height
+
+	if final_y < water_level:
+		# Фізично копаємо глибокі океанські западини (до -40 метрів)
+		# Це необхідно для роботи шейдера води з ефектом глибини (Beer's Law)
+		var dig = smoothstep(water_level, water_level - 15.0, final_y)
+		final_y = lerp(final_y, water_level - 40.0, dig)
+
+	return final_y
 
 func _build_terrain_data_in_thread():
 	var st = SurfaceTool.new()
@@ -88,67 +126,46 @@ func _build_terrain_data_in_thread():
 	var grass_transforms = []
 	var needs_water = false
 	
+	# === ГЕНЕРАЦІЯ ЗЕМЛІ ТА ТРАВИ ===
 	for z in range(resolution + 1):
 		for x in range(resolution + 1):
 			var world_x = offset_x + x * step
 			var world_z = offset_z + z * step
-			
 			var py = _get_h(world_x, world_z)
 			var moist = moisture.get_noise_2d(world_x, world_z)
-
-			# === ЕКСКАВАТОР: Фізично викопуємо дно океанів та озер ===
-			# Увага: Якщо у тебе в старому коді рівень води був -20.0, напиши тут -20.0. 
-			# Якщо у новому 2.8, напиши 2.8.
-			var my_water_level = 2.8 
-			
-			if py < my_water_level:
-				# Плавний спуск: що глибше початкова точка під воду, то сильніше ми копаємо яму (до -35 метрів)
-				# Це створить справжні океанські впадини для синього градієнта!
-				var dig_factor = smoothstep(my_water_level, my_water_level - 3.0, py)
-				py = lerp(py, my_water_level - 35.0, dig_factor)
+			var cell_cont = continent.get_noise_2d(world_x, world_z)
 
 			st.set_color(Color(moist, 0, 0))
 			st.set_uv(Vector2(float(x) / resolution, float(z) / resolution))
 			st.add_vertex(Vector3(x * step, py, z * step))
 			if py < 2.9: needs_water = true
 			
-			# === ІДЕАЛЬНА ЛОГІКА ТРАВИ (БЕЗ ЛИСИН І ПОЛЬОТІВ) ===
 			if x < resolution and z < resolution:
 				var h00 = py 
 				var h10 = _get_h(world_x + step, world_z)
 				var h01 = _get_h(world_x, world_z + step)
 				var h11 = _get_h(world_x + step, world_z + step)
 				
-				var cell_cont = continent.get_noise_2d(world_x, world_z)
-				
 				if cell_cont > -0.2 and moist > -0.15:
-					# ВДВІЧІ МЕНШЕ ТРАВИ: було 12 (144 кущі), тепер 8 (64 кущі)
-					var density = 10
+					var density = 11 
 					for gx_idx in range(density):
 						for gz_idx in range(density):
 							var local_x = (gx_idx + rng.randf()) / float(density)
 							var local_z = (gz_idx + rng.randf()) / float(density)
-							
 							var gx = world_x + local_x * step
 							var gz = world_z + local_z * step
 							var g_py = 0.0
 							
-							if local_x + local_z <= 1.0:
-								g_py = h00 + local_x * (h10 - h00) + local_z * (h01 - h00)
+							if local_x + local_z <= 1.0: g_py = h00 + local_x * (h10 - h00) + local_z * (h01 - h00)
 							else:
-								var nx = 1.0 - local_x
-								var nz = 1.0 - local_z
+								var nx = 1.0 - local_x; var nz = 1.0 - local_z
 								g_py = h11 + nx * (h01 - h11) + nz * (h10 - h11)
 								
 							g_py -= 0.1 
-							
 							if g_py > 3.2 and g_py < 40.0: 
 								var pos = Vector3(gx - offset_x, g_py, gz - offset_z)
-								
-								# ПРОПОРЦІЙНИЙ МАСШТАБ: Робимо кущі значно вужчими, щоб текстура не "пливла"
-								var s_xz = rng.randf_range(1.5, 2.5) # Було 4.0 - 6.0
-								var s_y = rng.randf_range(1.0, 1.5)  # Висота
-								
+								var s_xz = rng.randf_range(1.5, 2.5) 
+								var s_y = rng.randf_range(1.0, 1.5)  
 								var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s_xz, s_y, s_xz))
 								grass_transforms.append(Transform3D(basis, pos))
 			
@@ -157,9 +174,44 @@ func _build_terrain_data_in_thread():
 			var i = x + z * (resolution + 1)
 			st.add_index(i); st.add_index(i + 1); st.add_index(i + resolution + 1)
 			st.add_index(i + 1); st.add_index(i + resolution + 2); st.add_index(i + resolution + 1)
-			
 	st.generate_normals()
-	call_deferred("_on_thread_finished", {"mesh": st.commit(), "grass": grass_transforms, "has_water": needs_water})
+	
+	# === НОВЕ: ГЕНЕРАЦІЯ "РОЗУМНОЇ" ВОДИ ===
+	var water_mesh_data = null
+	if needs_water:
+		var w_st = SurfaceTool.new()
+		w_st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var w_res = 30 # Деталізація сітки води
+		var w_step = chunk_size / w_res
+		
+		for wz in range(w_res + 1):
+			for wx in range(w_res + 1):
+				var world_wx = offset_x + wx * w_step
+				var world_wz = offset_z + wz * w_step
+				
+				# 1. Читаємо шум континентів у цій точці
+				var w_c_raw = continent.get_noise_2d(world_wx, world_wz)
+				
+				# 2. МАСКА БІОМІВ: 
+				# Якщо c_raw = -0.3 (Глибокий океан) -> wave_mask = 1.0 (Максимальні хвилі)
+				# Якщо c_raw = -0.1 (Близько до берега) або більше (Озера) -> wave_mask = 0.0 (Гладка вода)
+				var wave_mask = smoothstep(-0.10, -0.30, w_c_raw)
+				
+				# 3. Записуємо маску в червоний канал кольору вершини (COLOR.r)
+				w_st.set_color(Color(wave_mask, 0, 0))
+				w_st.set_uv(Vector2(float(wx) / w_res, float(wz) / w_res))
+				# Вода генерується вже в правильних координатах чанка, тому без зміщень
+				w_st.add_vertex(Vector3(wx * w_step, 2.8, wz * w_step))
+				
+		for wz in range(w_res):
+			for wx in range(w_res):
+				var i = wx + wz * (w_res + 1)
+				w_st.add_index(i); w_st.add_index(i + 1); w_st.add_index(i + w_res + 1)
+				w_st.add_index(i + 1); w_st.add_index(i + w_res + 2); w_st.add_index(i + w_res + 1)
+		w_st.generate_normals()
+		water_mesh_data = w_st.commit()
+
+	call_deferred("_on_thread_finished", {"mesh": st.commit(), "grass": grass_transforms, "has_water": needs_water, "water_mesh": water_mesh_data})
 
 func _on_thread_finished(data: Dictionary):
 	thread.wait_to_finish() 
@@ -178,22 +230,13 @@ func _on_thread_finished(data: Dictionary):
 			mm.set_instance_transform(i, data["grass"][i])
 		add_child(mmi)
 		
-	if data["has_water"]:
-		var water_mesh = PlaneMesh.new()
-		water_mesh.size = Vector2(chunk_size, chunk_size)
-		
-		# --- ФІКС 1: Додаємо сітку для фізичних хвиль (40x40 трикутників) ---
-		water_mesh.subdivide_width = 40 
-		water_mesh.subdivide_depth = 40
-		
+	# === ВСТАНОВЛЮЄМО НАШУ НОВУ ВОДУ ===
+	if data["has_water"] and data["water_mesh"] != null:
 		var water_instance = MeshInstance3D.new()
-		water_instance.mesh = water_mesh
-		
-		# --- ФІКС 2: Завантажуємо саме МАТЕРІАЛ, а не шейдер ---
-		# Переконайся, що цей файл існує за цим шляхом
+		water_instance.mesh = data["water_mesh"]
 		water_instance.material_override = load("res://Materials/water_mat.tres")
-		
-		water_instance.position = Vector3(chunk_size / 2.0, 2.8, chunk_size / 2.0) 
+		# Позиція (0,0,0), бо ми згенерували вершини в точних координатах вище
+		water_instance.position = Vector3.ZERO 
 		add_child(water_instance)
 	
 	chunk_ready.emit(self)

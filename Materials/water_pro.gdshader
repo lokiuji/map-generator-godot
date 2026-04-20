@@ -38,9 +38,16 @@ float fresnel(float amount, vec3 normal, vec3 view) {
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	// Фізично піднімаємо полігони води
+	
+	// Зчитуємо маску біомів (1.0 = Океан, 0.0 = Берег/Озеро)
+	float wave_mask = COLOR.r;
+	
+	// Фізично піднімаємо полігони води (Генерація хвиль)
 	float height = texture(wave, world_pos.xz / noise_scale + TIME * time_scale).r;
-	VERTEX.y += height * height_scale;
+	
+	// МНОЖИМО НА МАСКУ! 
+	// Тепер на березі (де mask = 0.0) висота хвиль дорівнюватиме 0. Вода буде ідеально рівною.
+	VERTEX.y += height * height_scale * wave_mask;
 }
 
 void fragment() {

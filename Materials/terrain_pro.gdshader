@@ -18,28 +18,26 @@ void vertex() {
 }
 
 void fragment() {
+	// Рахуємо крутизну схилу (чим ближче до 1.0, тим плоскіша земля)
+	float slope = NORMAL.y; 
+	
 	vec3 color;
-
 	if (v_moisture < -0.15) {
 		color = color_sand; 
 	} else {
+		// Трава росте там, де не занадто круто (slope > 0.7)
 		color = mix(color_grass, color_forest, smoothstep(-0.15, 0.5, v_moisture));
 	}
 
-	if (v_height < 3.2) {
-		color = mix(color_sand, color, smoothstep(2.5, 3.2, v_height));
-	} else if (v_height > 35.0) {
-		color = mix(color, color_rock, smoothstep(35.0, 50.0, v_height));
-		color = mix(color, color_snow, smoothstep(110.0, 140.0, v_height));
+	// Якщо схил крутий (slope < 0.65) — це скеля, незалежно від висоти!
+	if (slope < 0.65) {
+		color = mix(color_rock, color, smoothstep(0.5, 0.65, slope));
 	}
 	
-	// Робимо шум на землі ледь-ледь помітним (0.08 замість 0.15), 
-	// щоб він не ламав ілюзію злиття з травою
-	vec3 world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	float ground_noise = fract(sin(dot(world_pos.xz, vec2(12.9898, 78.233))) * 43758.5453);
-	color = mix(color, color * 0.85, ground_noise * 0.08); 
+	// Сніг залишаємо тільки на дуже великій висоті
+	if (v_height > 120.0) {
+		color = mix(color, color_snow, smoothstep(120.0, 160.0, v_height));
+	}
 	
 	ALBEDO = color;
-	ROUGHNESS = 0.95;
-	SPECULAR = 0.0; 
 }
