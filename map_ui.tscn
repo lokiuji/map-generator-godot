@@ -44,7 +44,6 @@ offset_bottom = 300.0
 grow_horizontal = 2
 grow_vertical = 2
 expand_mode = 1
-stretch_mode = 3
 
 [node name="PlayerMarker" type="ColorRect" parent="Panel/MapTexture" unique_id=1389859490]
 unique_name_in_owner = true

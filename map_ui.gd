@@ -28,6 +28,9 @@ func _input(event):
 		if visible:
 			_generate_map_image()
 			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if visible else Input.MOUSE_MODE_CAPTURED)
+		else:
+			# Якщо мапа закрилася на "M" - ХОВАЄМО мишку і повертаємо камеру
+			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 	if visible and event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
@@ -59,16 +62,23 @@ func _generate_map_image():
 	
 	map_texture.texture = ImageTexture.create_from_image(img)
 
-func _teleport_to_map_point(mouse_pos):
-	var rect = map_texture.get_global_rect()
-	if rect.has_point(mouse_pos):
-		var local_coord = (mouse_pos - rect.position) / rect.size
-		var target_x = local_coord.x * WORLD_SIZE
-		var target_z = local_coord.y * WORLD_SIZE
+func _teleport_to_map_point(_mouse_pos):
+	# Беремо координати мишки ЛОКАЛЬНО всередині самої картинки мапи!
+	var local_mouse = map_texture.get_local_mouse_position()
+	
+	# Перевіряємо, чи клікнули ми саме по картинці (а не повз неї)
+	if local_mouse.x >= 0 and local_mouse.x <= map_texture.size.x and \
+	   local_mouse.y >= 0 and local_mouse.y <= map_texture.size.y:
+		
+		# Рахуємо відсоток кліку (від 0.0 до 1.0)
+		var percent_x = local_mouse.x / map_texture.size.x
+		var percent_y = local_mouse.y / map_texture.size.y
+		
+		# Переводимо у світові координати
+		var target_x = percent_x * WORLD_SIZE
+		var target_z = percent_y * WORLD_SIZE
 		
 		if player:
-			# ФІКС ТЕЛЕПОРТАЦІЇ: Висота 400.0 гарантує, що ми впадемо з неба, 
-			# а не опинимося всередині гори (бо гори в нас тепер висотою до 450м)
 			player.global_position = Vector3(target_x, 400.0, target_z)
 			visible = false
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
@@ -77,16 +87,12 @@ func _process(_delta):
 	if not visible or not player or map_texture == null or player_marker == null:
 		return
 		
-	# Отримуємо реальний розмір мапи, який вона має на екрані прямо зараз
-	var map_size = map_texture.size
+	# Знаходимо відсоток позиції гравця у світі (від 0.0 до 1.0)
+	var percent_x = wrapf(player.global_position.x, 0.0, WORLD_SIZE) / WORLD_SIZE
+	var percent_z = wrapf(player.global_position.z, 0.0, WORLD_SIZE) / WORLD_SIZE
 	
-	# Зациклюємо координати
-	var player_x = wrapf(player.global_position.x, 0.0, WORLD_SIZE)
-	var player_z = wrapf(player.global_position.z, 0.0, WORLD_SIZE)
-	
-	# Розрахунок: (0.0...1.0) * реальний_розмір_в_пікселях
-	var px = (player_x / WORLD_SIZE) * map_size.x
-	var pz = (player_z / WORLD_SIZE) * map_size.y
-	
-	# Центруємо маркер (віднімаємо половину його розміру)
-	player_marker.global_position = map_texture.global_position + Vector2(px, pz) - (player_marker.size / 2.0)
+	# Ставимо маркер ЛОКАЛЬНО відносно картинки мапи
+	player_marker.position = Vector2(
+		percent_x * map_texture.size.x,
+		percent_z * map_texture.size.y
+	) - (player_marker.size / 2.0)

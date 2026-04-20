@@ -3,7 +3,7 @@ extends Node3D
 const CHUNK_SIZE = 120.0
 const RENDER_DISTANCE = 3
 
-@export var player: Node3D
+@onready var player = get_tree().get_first_node_in_group("player")
 @export var terrain_material: Material
 
 var active_chunks = {}
@@ -40,7 +40,11 @@ func _ready():
 		# === 2. ФІКС СПАВНУ: КИДАЄМО ГРАВЦЯ В ЦЕНТР СВІТУ ===
 		# Центр світу 6000x6000 - це точка (3000, 3000). 
 		# Висоту ставимо 400, щоб точно впасти на гору, а не під неї.
-		player.global_position = Vector3(3000.0, 400.0, 3000.0)
+		player.global_position = _find_valid_spawn_point()
+		current_player_chunk = Vector2(floor(player.global_position.x / CHUNK_SIZE), floor(player.global_position.z / CHUNK_SIZE))
+		update_chunks(current_player_chunk)
+	else:
+		push_error("ГРАВЦЯ НЕ ЗНАЙДЕНО! Перевір, чи є він у групі 'player'")
 		
 		current_player_chunk = Vector2(floor(player.global_position.x / CHUNK_SIZE), floor(player.global_position.z / CHUNK_SIZE))
 		update_chunks(current_player_chunk)
@@ -142,3 +146,28 @@ func _build_grass_mesh() -> Mesh:
 
 	st.generate_normals()
 	return st.commit()
+func _find_valid_spawn_point() -> Vector3:
+	var rng = RandomNumberGenerator.new()
+	rng.randomize()
+	var center = 6000.0 / 2.0
+	
+	# Шукаємо підходяще місце (максимум 100 спроб, щоб гра не зависла)
+	for i in range(100):
+		# Беремо випадкові координати не надто близько до краю світу
+		var rx = rng.randf_range(1000.0, 5000.0)
+		var rz = rng.randf_range(1000.0, 5000.0)
+		
+		# Застосовуємо ту саму радіальну маску океану, що й для генерації землі
+		var dist = Vector2(rx, rz).distance_to(Vector2(center, center))
+		var edge_falloff = 1.0 - smoothstep(center * 0.7, center * 0.98, dist)
+		
+		var cont_val =continent_noise.get_noise_2d(rx, rz)
+		cont_val = lerp(-1.0, cont_val, edge_falloff)
+		
+		# ПЕРЕВІРКА БІОМУ: Якщо значення від 0.0 до 0.15 - це пляж або пологий берег!
+		if cont_val >= 0.0 and cont_val <= 0.15:
+			print("Знайдено безпечний спавн: X:", rx, " Z:", rz)
+			return Vector3(rx, 400.0, rz)
+			
+	# Якщо за 100 спроб нічого не знайшли (майже нереально), кидаємо в центр
+	return Vector3(center, 400.0, center)
