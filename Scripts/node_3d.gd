@@ -27,15 +27,29 @@ func _ready():
 		update_chunks(current_player_chunk)
 
 func _find_valid_spawn_point() -> Vector3:
+	if Global.custom_spawn_x >= 0.0: 
+		return Vector3(Global.custom_spawn_x, 800.0, Global.custom_spawn_z)
+		
 	var rng = RandomNumberGenerator.new()
 	rng.seed = Global.world_seed 
+	
+	var start_x = Global.WORLD_SIZE / 2.0
+	var start_z = Global.WORLD_SIZE / 2.0
+	
+	# МАГІЯ: Беремо точні координати самого першого згенерованого острова!
+	if Global.continents.size() > 0:
+		start_x = Global.continents[0].pos.x
+		start_z = Global.continents[0].pos.y
+		
+	# Шукаємо височину виключно в радіусі 1500 метрів від центру цього острова
 	for i in range(100):
-		var rx = rng.randf_range(1000.0, Global.WORLD_SIZE - 1000.0)
-		var rz = rng.randf_range(1000.0, Global.WORLD_SIZE - 1000.0)
+		var rx = start_x + rng.randf_range(-1500.0, 1500.0)
+		var rz = start_z + rng.randf_range(-1500.0, 1500.0)
 		if Global.get_raw_elevation(rx, rz) > 0.45: 
 			return Vector3(rx, 800.0, rz)
-	return Vector3(Global.WORLD_SIZE/2, 800, Global.WORLD_SIZE/2)
-
+			
+	# Якщо не знайшли височину (що малоймовірно), кидаємо прямо в центр острова
+	return Vector3(start_x, 800.0, start_z)
 func _process(_delta):
 	if not is_world_loading and player:
 		var new_chunk = Vector2(floor(player.global_position.x / CHUNK_SIZE), floor(player.global_position.z / CHUNK_SIZE))
