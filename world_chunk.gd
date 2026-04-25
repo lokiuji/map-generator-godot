@@ -14,6 +14,7 @@ var player_ref: Node3D
 var mmi: MultiMeshInstance3D 
 var has_collision: bool = false
 var static_body_ref: StaticBody3D = null
+var is_cancelled: bool = false 
 
 signal chunk_ready(chunk_node)
 
@@ -35,45 +36,28 @@ func _process(_delta):
 	if player_ref:
 		var dist = global_position.distance_to(player_ref.global_position)
 		if mmi: mmi.visible = dist < 100.0
-
-		if dist > 150.0 and has_collision:
+		if dist > 200.0 and has_collision:
 			if static_body_ref:
 				static_body_ref.queue_free()
 				static_body_ref = null
 			has_collision = false
 
-# НОВА ЛОГІКА КУТАСТИХ ГІР
 func _get_h(world_x: float, world_z: float) -> float:
 	var b_data = Global.get_biome_data(world_x, world_z)
 	var e = b_data["elevation"]
+	if e < 0.35: return 5.0 + (e - 0.35) * 40.0
 	
-	var base_height = 0.0
-	if e < 0.4:
-		# Океан (все що нижче 0.4)
-		base_height = (e - 0.4) * 80.0 
-	else:
-		# Суша
-		var land_e = e - 0.4
-		var plains = land_e * 200.0 # Пологі рівнини та ліси
-		
-		# Маска гір: починаємо піднімати гострі скелі там, де висота більша за 0.55
-		var mount_mask = smoothstep(0.55, 0.85, e)
-		
-		# Отримуємо гострі хребти з нашого RIDGED шуму
-		var sharp_peaks = Global.mountain_noise.get_noise_2d(world_x, world_z) * 1200.0
-		
-		base_height = plains + (sharp_peaks * mount_mask)
-		
-	var micro = Global.detail_noise.get_noise_2d(world_x, world_z) * 5.0
-	return 5.0 + base_height + micro
+	var land_base = (e - 0.35) * 150.0
+	var ridge_mask = smoothstep(0.5, 0.8, e)
+	# Менше множення, щоб не було гострих стін на чанках 50м
+	var peaks = Global.mountain_noise.get_noise_2d(world_x, world_z) * 350.0 
+	return 5.0 + land_base + (peaks * ridge_mask)
 
 func _get_normal(world_x: float, world_z: float) -> Vector3:
 	var d = 0.5 
-	var h_left = _get_h(world_x - d, world_z)
-	var h_right = _get_h(world_x + d, world_z)
-	var h_down = _get_h(world_x, world_z - d)
-	var h_up = _get_h(world_x, world_z + d)
-	return Vector3(h_left - h_right, 2.0 * d, h_down - h_up).normalized()
+	var h_l = _get_h(world_x - d, world_z); var h_r = _get_h(world_x + d, world_z)
+	var h_d = _get_h(world_x, world_z - d); var h_u = _get_h(world_x, world_z + d)
+	return Vector3(h_l - h_r, 2.0 * d, h_d - h_u).normalized()
 
 func _build_terrain_data_in_thread():
 	var st = SurfaceTool.new()
@@ -88,140 +72,106 @@ func _build_terrain_data_in_thread():
 	var needs_water = false
 	
 	for z in range(resolution + 1):
+		if is_cancelled: return
 		for x in range(resolution + 1):
-			var world_x = offset_x + x * step
-			var world_z = offset_z + z * step
+			var wx = offset_x + x * step
+			var wz = offset_z + z * step
+			var py = _get_h(wx, wz)
+			var b_data = Global.get_biome_data(wx, wz)
 			
-			var py = _get_h(world_x, world_z)
-			var b_data = Global.get_biome_data(world_x, world_z)
-			
-			var exact_normal = _get_normal(world_x, world_z)
-			st.set_normal(exact_normal)
-			
-			var vert_color = b_data["color"]
-			var e = b_data["elevation"]
-			var snow_weight = 0.0
-			if e > 0.7: snow_weight = clamp((e - 0.7) / 0.1, 0.0, 1.0)
-			vert_color.a = snow_weight
-			
-			st.set_color(vert_color)
+			st.set_normal(_get_normal(wx, wz))
+			var col = b_data["color"]
+			col.a = clamp((b_data["elevation"] - 0.7) / 0.1, 0.0, 1.0) if b_data["elevation"] > 0.7 else 0.0
+			st.set_color(col)
 			st.set_uv(Vector2(float(x) / resolution, float(z) / resolution))
 			st.add_vertex(Vector3(x * step, py, z * step))
-			
 			if py < 4.9: needs_water = true
 			
-			if x < resolution and z < resolution:
-				var h00 = py 
-				var h10 = _get_h(world_x + step, world_z)
-				var h01 = _get_h(world_x, world_z + step)
-				var h11 = _get_h(world_x + step, world_z + step)
-				
-				if py > 5.5 and b_data["is_grassy"]:
-					var cell_normal = _get_normal(world_x + step/2.0, world_z + step/2.0)
-					if (1.0 - cell_normal.dot(Vector3.UP)) < 0.25: 
-						var density = 5
-						for gx_idx in range(density):
-							for gz_idx in range(density):
-								var local_x = (gx_idx + rng.randf()) / float(density)
-								var local_z = (gz_idx + rng.randf()) / float(density)
-								var grass_x = world_x + local_x * step
-								var grass_z = world_z + local_z * step
-								
-								var g_py = 0.0
-								if local_x + local_z <= 1.0: 
-									g_py = h00 + local_x * (h10 - h00) + local_z * (h01 - h00)
-								else:
-									var nx = 1.0 - local_x
-									var nz = 1.0 - local_z
-									g_py = h11 + nx * (h01 - h11) + nz * (h10 - h11)
-									
-								g_py -= 0.1 
-								if g_py > 5.5 and e < 0.65: 
-									var pos = Vector3(grass_x - offset_x, g_py, grass_z - offset_z)
-									var s_xz = rng.randf_range(1.5, 2.5) 
-									var s_y = rng.randf_range(1.0, 1.5)  
-									var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s_xz, s_y, s_xz))
-									grass_transforms.append(Transform3D(basis, pos))
-			
+			# === ЗБІЛЬШЕНА ГУСТОТА ТРАВИ ===
+			if x < resolution and z < resolution and py > 5.5 and b_data["is_grassy"]:
+				var cell_n = _get_normal(wx + step/2.0, wz + step/2.0)
+				if cell_n.dot(Vector3.UP) > 0.85:
+					var density = 8 # Було 4. Тепер трави значно більше!
+					for i in range(density):
+						var lx = (rng.randf()) * step
+						var lz = (rng.randf()) * step
+						var g_pos = Vector3(x * step + lx, _get_h(wx + lx, wz + lz), z * step + lz)
+						var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.5, rng.randf_range(0.8, 1.2), 1.5))
+						grass_transforms.append(Transform3D(basis, g_pos))
+
+	if is_cancelled: return
+
 	for z in range(resolution):
 		for x in range(resolution):
-			var idx = x + z * (resolution + 1)
-			st.add_index(idx)
-			st.add_index(idx + 1)
-			st.add_index(idx + resolution + 1)
-			st.add_index(idx + 1)
-			st.add_index(idx + resolution + 2)
-			st.add_index(idx + resolution + 1)
+			var i = x + z * (resolution + 1)
+			st.add_index(i); st.add_index(i + 1); st.add_index(i + resolution + 1)
+			st.add_index(i + 1); st.add_index(i + resolution + 2); st.add_index(i + resolution + 1)
 	
-	var water_mesh_data = null
+	st.generate_tangents() 
+	
+	var final_mesh = st.commit()
+	var col_shape = ConcavePolygonShape3D.new()
+	col_shape.set_faces(final_mesh.get_faces())
+	
+	var water_data = null
 	if needs_water:
 		var w_st = SurfaceTool.new()
 		w_st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		var w_res = 15
-		var w_step = chunk_size / w_res
-		
-		for wz in range(w_res + 1):
-			for wx in range(w_res + 1):
-				var world_wx = offset_x + wx * w_step
-				var world_wz = offset_z + wz * w_step
-				var depth = _get_h(world_wx, world_wz)
-				var wave_mask = smoothstep(5.0, -20.0, depth)
-				w_st.set_color(Color(wave_mask, 0, 0))
-				w_st.set_uv(Vector2(float(wx) / w_res, float(wz) / w_res))
-				w_st.add_vertex(Vector3(wx * w_step, 4.8, wz * w_step))
+		for wz in range(11):
+			if is_cancelled: return
+			for wx in range(11):
+				var depth = _get_h(offset_x + wx*(chunk_size/10.0), offset_z + wz*(chunk_size/10.0))
+				w_st.set_color(Color(smoothstep(5.0, -10.0, depth), 0, 0))
+				w_st.set_uv(Vector2(float(wx)/10.0, float(wz)/10.0))
+				w_st.add_vertex(Vector3(wx*(chunk_size/10.0), 4.8, wz*(chunk_size/10.0)))
 				
-		for wz in range(w_res):
-			for wx in range(w_res):
-				var w_idx = wx + wz * (w_res + 1)
-				w_st.add_index(w_idx)
-				w_st.add_index(w_idx + 1)
-				w_st.add_index(w_idx + w_res + 1)
-				w_st.add_index(w_idx + 1)
-				w_st.add_index(w_idx + w_res + 2)
-				w_st.add_index(w_idx + w_res + 1)
-		
+		for wz in range(10):
+			for wx in range(10):
+				var w_i = wx + wz * 11
+				w_st.add_index(w_i); w_st.add_index(w_i + 1); w_st.add_index(w_i + 11)
+				w_st.add_index(w_i + 1); w_st.add_index(w_i + 12); w_st.add_index(w_i + 11)
+				
 		w_st.generate_normals()
-		water_mesh_data = w_st.commit()
+		w_st.generate_tangents() 
+		water_data = w_st.commit()
 
-	call_deferred("_on_thread_finished", {"mesh": st.commit(), "grass": grass_transforms, "has_water": needs_water, "water_mesh": water_mesh_data})
+	if not is_cancelled:
+		call_deferred("_on_thread_finished", {"mesh": final_mesh, "shape": col_shape, "grass": grass_transforms, "water": water_data})
 
 func _on_thread_finished(data: Dictionary):
-	thread.wait_to_finish() 
+	if is_cancelled: return
+	if thread and thread.is_started(): thread.wait_to_finish() 
+		
 	terrain_mesh_instance.mesh = data["mesh"]
 	
-	# === ФІКС ПРОВАЛЮВАННЯ: СТВОРЮЄМО КОЛІЗІЮ МИТТЄВО ДЛЯ ГРАВЦЯ ===
-	if player_ref and global_position.distance_to(player_ref.global_position) < 150.0:
-		_create_collision_now()
+	if not has_collision:
+		var s_body = StaticBody3D.new()
+		var c_node = CollisionShape3D.new()
+		c_node.shape = data["shape"]
+		s_body.add_child(c_node)
+		terrain_mesh_instance.add_child(s_body)
+		static_body_ref = s_body
+		has_collision = true
 	
 	if grass_mesh and data["grass"].size() > 0:
-		mmi = MultiMeshInstance3D.new() 
+		mmi = MultiMeshInstance3D.new()
 		var mm = MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.mesh = grass_mesh
-		mm.instance_count = data["grass"].size() 
-		mmi.multimesh = mm 
-		mmi.material_override = grass_material 
-		for i in range(data["grass"].size()):
-			mm.set_instance_transform(i, data["grass"][i])
+		mm.instance_count = data["grass"].size()
+		mmi.multimesh = mm
+		mmi.material_override = grass_material
+		for i in range(data["grass"].size()): mm.set_instance_transform(i, data["grass"][i])
 		add_child(mmi)
-		
-	if data["has_water"] and data["water_mesh"] != null:
-		var water_instance = MeshInstance3D.new()
-		water_instance.mesh = data["water_mesh"]
-		water_instance.material_override = load("res://Materials/water_mat.tres")
-		water_instance.position = Vector3.ZERO 
-		add_child(water_instance)
+	
+	if data["water"]:
+		var w_inst = MeshInstance3D.new()
+		w_inst.mesh = data["water"]
+		w_inst.material_override = load("res://Materials/water_mat.tres")
+		add_child(w_inst)
 	
 	chunk_ready.emit(self)
 
-func _create_collision_now():
-	if not has_collision and terrain_mesh_instance.mesh != null:
-		terrain_mesh_instance.create_trimesh_collision()
-		has_collision = true
-		for child in terrain_mesh_instance.get_children():
-			if child is StaticBody3D:
-				static_body_ref = child
-				break
-
 func _exit_tree():
+	is_cancelled = true
 	if thread and thread.is_started(): thread.wait_to_finish()

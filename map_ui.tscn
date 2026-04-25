@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://dj32w4116jqry"]
 
 [node name="MapUI" type="CanvasLayer" unique_id=1628385544]
+layer = 100
 
 [node name="Panel" type="Panel" parent="." unique_id=786449048]
 self_modulate = Color(0, 0, 0, 0.7058824)

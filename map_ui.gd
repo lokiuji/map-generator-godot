@@ -1,36 +1,31 @@
 extends CanvasLayer
 
-@onready var texture_rect = $TextureRect # Переконайся, що ім'я вузла збігається з твоїм деревом!
+@onready var map_texture: TextureRect = %MapTexture
 
-func _ready():
-	visible = false
+var is_generated = false
+
+func _ready(): visible = false
 
 func _input(event):
-	if event.is_action_pressed("map"):
+	if event is InputEventKey and event.pressed and event.keycode == KEY_M:
 		visible = !visible
 		if visible:
-			_generate_map_image()
-			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			if not is_generated:
+				_draw_map()
+				is_generated = true
 		else:
-			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
-func _generate_map_image():
-	var map_res = 200 # Роздільна здатність карти (можна збільшити до 300)
-	var img = Image.create(map_res, map_res, false, Image.FORMAT_RGB8)
-	
-	for x in range(map_res):
-		for y in range(map_res):
-			# Конвертуємо пікселі карти в координати великого світу
-			var world_x = (float(x) / map_res) * Global.WORLD_SIZE
-			var world_z = (float(y) / map_res) * Global.WORLD_SIZE
-			
-			var b_data = Global.get_biome_data(world_x, world_z)
-			var col = b_data["color"]
-			
-			# Додаємо красиві тіні для гір, щоб було видно рельєф
-			var e = b_data["elevation"]
-			if e > 0.4: col = col.darkened((e - 0.4) * 0.8)
-				
+func _draw_map():
+	var res = 250
+	var img = Image.create(res, res, false, Image.FORMAT_RGB8)
+	for x in range(res):
+		for y in range(res):
+			var b = Global.get_biome_data((float(x)/res)*Global.WORLD_SIZE, (float(y)/res)*Global.WORLD_SIZE)
+			var col = b["color"]
+			if b["elevation"] > 0.4: col = col.darkened((b["elevation"] - 0.4) * 0.7)
 			img.set_pixel(x, y, col)
 			
-	texture_rect.texture = ImageTexture.create_from_image(img)
+	# ВИПРАВЛЕНО: Використовуємо правильну назву змінної та правильний клас ImageTexture
+	map_texture.texture = ImageTexture.create_from_image(img)
