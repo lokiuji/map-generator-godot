@@ -7,39 +7,41 @@ var player: Node3D
 
 func _ready():
 	player = get_tree().get_first_node_in_group("player")
-	
-	# Оскільки CanvasLayer не має власного _gui_input, 
-	# ми підключаємо сигнал натискання до самої картинки карти
+	self.hide()
 	if map_texture:
 		map_texture.gui_input.connect(_on_map_gui_input)
+		_generate_map_texture()
+
+func _generate_map_texture():
+	var img_size = 256 
+	var img = Image.create(img_size, img_size, false, Image.FORMAT_RGB8)
+	var step = Global.WORLD_SIZE / img_size
+	for y in range(img_size):
+		for x in range(img_size):
+			var b_data = Global.get_biome_data(x * step, y * step)
+			img.set_pixel(x, y, b_data["color"])
+	map_texture.texture = ImageTexture.create_from_image(img)
+
+func _input(event):
+	if event is InputEventKey and event.pressed and event.keycode == KEY_M:
+		visible = !visible
+		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if visible else Input.MOUSE_MODE_CAPTURED)
 
 func _process(_delta):
-	# У Godot 4 CanvasLayer має властивість visible
 	if player and visible:
-		_update_player_marker_position()
+		var map_size = map_texture.size
+		player_marker.position = Vector2(
+			(player.global_position.x / Global.WORLD_SIZE) * map_size.x,
+			(player.global_position.z / Global.WORLD_SIZE) * map_size.y
+		)
 
-func _update_player_marker_position():
-	var map_size = map_texture.size
-	
-	# Обчислюємо нормалізовану позицію гравця
-	var norm_x = player.global_position.x / Global.WORLD_SIZE
-	var norm_z = player.global_position.z / Global.WORLD_SIZE
-	
-	# Встановлюємо позицію маркера
-	player_marker.position = Vector2(norm_x * map_size.x, norm_z * map_size.y)
-
-# Ця функція тепер викликається, коли ви клікаєте саме по вузлу MapTexture
 func _on_map_gui_input(event):
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var click_pos = event.position
 		var map_size = map_texture.size
-		
-		var world_x = (click_pos.x / map_size.x) * Global.WORLD_SIZE
-		var world_z = (click_pos.y / map_size.y) * Global.WORLD_SIZE
-		
+		var world_x = (event.position.x / map_size.x) * Global.WORLD_SIZE
+		var world_z = (event.position.y / map_size.y) * Global.WORLD_SIZE
 		var world_manager = get_tree().current_scene
 		if world_manager.has_method("teleport_player"):
 			world_manager.teleport_player(Vector2(world_x, world_z))
-			
-			self.hide()
+			hide()
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)

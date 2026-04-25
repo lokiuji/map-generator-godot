@@ -19,7 +19,6 @@ const MAX_CONCURRENT_CHUNKS = 3
 
 func _ready():
 	procedural_grass_mesh = _build_grass_mesh()
-	
 	if player:
 		player.set_physics_process(false)
 		target_spawn_pos = _find_valid_spawn_point()
@@ -28,9 +27,6 @@ func _ready():
 		update_chunks(current_player_chunk)
 
 func _find_valid_spawn_point() -> Vector3:
-	if Global.custom_spawn_x >= 0.0: 
-		return Vector3(Global.custom_spawn_x, 800.0, Global.custom_spawn_z)
-		
 	var rng = RandomNumberGenerator.new()
 	rng.seed = Global.world_seed 
 	for i in range(100):
@@ -38,7 +34,6 @@ func _find_valid_spawn_point() -> Vector3:
 		var rz = rng.randf_range(1000.0, Global.WORLD_SIZE - 1000.0)
 		if Global.get_raw_elevation(rx, rz) > 0.45: 
 			return Vector3(rx, 800.0, rz)
-			
 	return Vector3(Global.WORLD_SIZE/2, 800, Global.WORLD_SIZE/2)
 
 func _process(_delta):
@@ -59,15 +54,14 @@ func update_chunks(center: Vector2):
 	
 	for p in active_chunks.keys():
 		if not desired.has(p):
-			if not active_chunks[p].is_ready:
-				chunks_building -= 1
-			active_chunks[p].queue_free()
+			var chunk = active_chunks[p]
+			if not chunk.is_ready: chunks_building -= 1
+			chunk.cancel_and_free()
 			active_chunks.erase(p)
 			
 	for p in desired:
 		if not active_chunks.has(p) and not chunk_spawn_queue.has(p): 
 			chunk_spawn_queue.append(p)
-			
 	chunk_spawn_queue.sort_custom(func(a,b): return a.distance_squared_to(center) < b.distance_squared_to(center))
 
 func spawn_chunk(p: Vector2):
@@ -87,9 +81,7 @@ func _on_chunk_ready(chunk: Node3D):
 		if player:
 			var sy = chunk._get_h(target_spawn_pos.x, target_spawn_pos.z)
 			await get_tree().physics_frame
-			await get_tree().physics_frame
 			player.global_position = Vector3(target_spawn_pos.x, sy + 3.0, target_spawn_pos.z)
-			if player.has_method("set_velocity"): player.set_velocity(Vector3.ZERO)
 			player.set_physics_process(true)
 			player.visible = true
 
@@ -97,12 +89,9 @@ func teleport_player(world_pos_2d: Vector2):
 	if not player: return
 	is_world_loading = true
 	player.set_physics_process(false)
-	player.visible = false
-	
 	target_spawn_pos = Vector3(world_pos_2d.x, 800.0, world_pos_2d.y)
 	player.global_position = target_spawn_pos
 	current_player_chunk = Vector2(floor(target_spawn_pos.x / CHUNK_SIZE), floor(target_spawn_pos.z / CHUNK_SIZE))
-	
 	chunk_spawn_queue.clear()
 	update_chunks(current_player_chunk)
 
@@ -111,11 +100,18 @@ func _build_grass_mesh() -> Mesh:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var r = 0.45; var h = 1.0  
 	var p1 = Vector3(0, 0, r); var p2 = Vector3(r * 0.866, 0, -r * 0.5); var p3 = Vector3(-r * 0.866, 0, -r * 0.5) 
+	
 	var add_flipped_quad = func(a: Vector3, b: Vector3):
-		var v1 = a; var uv1 = Vector2(0, 1); var v2 = b; var uv2 = Vector2(1, 1)
-		var v3 = b + Vector3(0, h, 0); var uv3 = Vector2(1, 0); var v4 = a + Vector3(0, h, 0); var uv4 = Vector2(0, 0)
-		st.set_uv(uv1); st.add_vertex(v1); st.set_uv(uv3); st.add_vertex(v3); st.set_uv(uv2); st.add_vertex(v2)
-		st.set_uv(uv1); st.add_vertex(v1); st.set_uv(uv4); st.add_vertex(v4); st.set_uv(uv3); st.add_vertex(v3)
-	add_flipped_quad.call(p1, p2); add_flipped_quad.call(p2, p3); add_flipped_quad.call(p3, p1)
+		var uv1 = Vector2(0, 1); var uv2 = Vector2(1, 1)
+		var uv3 = Vector2(1, 0); var uv4 = Vector2(0, 0)
+		var v3 = b + Vector3(0, h, 0); var v4 = a + Vector3(0, h, 0)
+		
+		# Правильне додавання точок разом з UV-координатами
+		st.set_uv(uv1); st.add_vertex(a); st.set_uv(uv3); st.add_vertex(v3); st.set_uv(uv2); st.add_vertex(b)
+		st.set_uv(uv1); st.add_vertex(a); st.set_uv(uv4); st.add_vertex(v4); st.set_uv(uv3); st.add_vertex(v3)
+		
+	add_flipped_quad.call(p1, p2)
+	add_flipped_quad.call(p2, p3)
+	add_flipped_quad.call(p3, p1)
 	st.generate_normals()
 	return st.commit()

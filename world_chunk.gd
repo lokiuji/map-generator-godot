@@ -1,5 +1,6 @@
 extends Node3D
 class_name WorldChunk
+
 var is_ready: bool = false
 var chunk_pos: Vector2
 var chunk_size: float
@@ -28,26 +29,16 @@ func start_generation(pos: Vector2, size: float, res: int, material: Material, g
 	terrain_mesh_instance.material_override = material
 	add_child(terrain_mesh_instance)
 	
-	# ЗАМІСТЬ Thread.new() використовуємо пул потоків Godot
 	task_id = WorkerThreadPool.add_task(_build_terrain_data_in_thread, true)
 
 func _process(_delta):
-	if player_ref:
-		# Рахуємо відстань від гравця до центру цього чанку
+	if player_ref and is_ready:
 		var dist = global_position.distance_to(player_ref.global_position)
-		
-		# Оптимізація рендеру: ховаємо дрібну траву вдалині
-		if mmi: 
-			mmi.visible = dist < 100.0
-			
-		# ВИДАЛЕНО: блок, який руйнував колізії (dist > 200.0) 
+		if mmi: mmi.visible = dist < 100.0
 
 func _get_h(world_x: float, world_z: float) -> float:
-	# ОПТИМІЗАЦІЯ: Більше ніяких важких словників біому тут. Тільки сира висота.
 	var e = Global.get_raw_elevation(world_x, world_z)
-	
 	if e < 0.35: return 5.0 + (e - 0.35) * 40.0
-	
 	var land_base = pow(e - 0.35, 1.2) * 150.0
 	var ridge_mask = smoothstep(0.4, 0.85, e)
 	var peaks = Global.mountain_noise.get_noise_2d(world_x, world_z) * 180.0 
@@ -55,8 +46,10 @@ func _get_h(world_x: float, world_z: float) -> float:
 
 func _get_normal(world_x: float, world_z: float) -> Vector3:
 	var d = 0.5 
-	var h_l = _get_h(world_x - d, world_z); var h_r = _get_h(world_x + d, world_z)
-	var h_d = _get_h(world_x, world_z - d); var h_u = _get_h(world_x, world_z + d)
+	var h_l = _get_h(world_x - d, world_z)
+	var h_r = _get_h(world_x + d, world_z)
+	var h_d = _get_h(world_x, world_z - d)
+	var h_u = _get_h(world_x, world_z + d)
 	return Vector3(h_l - h_r, 2.0 * d, h_d - h_u).normalized()
 
 func _build_terrain_data_in_thread():
@@ -72,7 +65,9 @@ func _build_terrain_data_in_thread():
 	var needs_water = false
 	
 	for z in range(resolution + 1):
-		if is_cancelled: return
+		if is_cancelled: 
+			call_deferred("_on_thread_finished", {})
+			return
 		for x in range(resolution + 1):
 			var wx = offset_x + x * step
 			var wz = offset_z + z * step
@@ -81,38 +76,52 @@ func _build_terrain_data_in_thread():
 			
 			st.set_normal(_get_normal(wx, wz))
 			var col = b_data["color"]
-			col.a = clamp((b_data["elevation"] - 0.7) / 0.1, 0.0, 1.0) if b_data["elevation"] > 0.7 else 0.0
+			
+			# ДОДАЄМО ЦЕ: Обчислюємо сніг залежно від висоти гір!
+			# Якщо висота (py) менша за 100 - снігу нема (0.0).
+			# Якщо висота від 100 до 130 - сніг плавно з'являється.
+			col.a = smoothstep(100.0, 130.0, py) 
+			
 			st.set_color(col)
-			st.set_uv(Vector2(float(x) / resolution, float(z) / resolution))
+			st.set_uv(Vector2(float(x)/resolution, float(z)/resolution))
+			st.set_color(col)
+			st.set_uv(Vector2(float(x)/resolution, float(z)/resolution))
 			st.add_vertex(Vector3(x * step, py, z * step))
 			if py < 4.9: needs_water = true
 			
-			# === ЗБІЛЬШЕНА ГУСТОТА ТРАВИ ===
 			if x < resolution and z < resolution and py > 5.5 and b_data["is_grassy"]:
 				var cell_n = _get_normal(wx + step/2.0, wz + step/2.0)
+				# 0.85 = спавн тільки на відносно плоских поверхнях
 				if cell_n.dot(Vector3.UP) > 0.85:
-					var density = 8
-					for i in range(density):
-						var lx = (rng.randf()) * step
-						var lz = (rng.randf()) * step
-						
-						# КОРЕКЦІЯ ВИСОТИ: опускаємо траву на 0.25 під землю
-						var raw_y = _get_h(wx + lx, wz + lz)
-						var grass_y = raw_y - 0.25
-						
-						var g_pos = Vector3(x * step + lx, grass_y, z * step + lz)
-						var grass_basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.5, rng.randf_range(0.8, 1.2), 1.5))
-						grass_transforms.append(Transform3D(grass_basis, g_pos))
-
-	if is_cancelled: return
+					
+					# 1. Беремо висоту 4 кутів конкретної клітинки мешу
+					var h00 = py
+					var h10 = _get_h(wx + step, wz)
+					var h01 = _get_h(wx, wz + step)
+					var h11 = _get_h(wx + step, wz + step)
+					
+					for i in range(8): # Кількість травинок
+						# Генеруємо нормалізовані координати всередині клітинки (від 0 до 1)
+						var u = rng.randf()
+						var v = rng.randf()
+						# 2. Вираховуємо ТОЧНУ висоту на поверхні утворених трикутників
+						var exact_y = 0.0
+						if u + v <= 1.0:
+							# Трава потрапила на перший трикутник клітинки
+							exact_y = h00 + (h10 - h00) * u + (h01 - h00) * v
+						else:
+							# Трава потрапила на другий трикутник клітинки
+							exact_y = h11 + (h01 - h11) * (1.0 - u) + (h10 - h11) * (1.0 - v)
+						# Додаємо мінімальний зсув (-0.1), просто щоб корінь точно ввійшов у текстуру землі
+						var g_pos = Vector3(x * step + (u * step), exact_y - 0.1, z * step + (v * step))
+						var g_basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.5, rng.randf_range(0.8, 1.2), 1.5))
+						grass_transforms.append(Transform3D(g_basis, g_pos))
 
 	for z in range(resolution):
 		for x in range(resolution):
 			var i = x + z * (resolution + 1)
 			st.add_index(i); st.add_index(i + 1); st.add_index(i + resolution + 1)
 			st.add_index(i + 1); st.add_index(i + resolution + 2); st.add_index(i + resolution + 1)
-	
-	st.generate_tangents() 
 	
 	var final_mesh = st.commit()
 	var col_shape = ConcavePolygonShape3D.new()
@@ -123,44 +132,47 @@ func _build_terrain_data_in_thread():
 		var w_st = SurfaceTool.new()
 		w_st.begin(Mesh.PRIMITIVE_TRIANGLES)
 		for wz in range(11):
-			if is_cancelled: return
+			if is_cancelled: 
+				call_deferred("_on_thread_finished", {})
+				return
 			for wx in range(11):
 				var depth = _get_h(offset_x + wx*(chunk_size/10.0), offset_z + wz*(chunk_size/10.0))
 				w_st.set_color(Color(smoothstep(5.0, -10.0, depth), 0, 0))
-				w_st.set_uv(Vector2(float(wx)/10.0, float(wz)/10.0))
-				w_st.add_vertex(Vector3(wx*(chunk_size/10.0), 4.8, wz*(chunk_size/10.0)))
 				
+				# ДОДАЄМО ЦЕЙ РЯДОК: Задаємо правильні UV-координати для поверхні води
+				w_st.set_uv(Vector2(float(wx) / 10.0, float(wz) / 10.0))
+				
+				w_st.add_vertex(Vector3(wx*(chunk_size/10.0), 4.8, wz*(chunk_size/10.0)))
 		for wz in range(10):
 			for wx in range(10):
 				var w_i = wx + wz * 11
 				w_st.add_index(w_i); w_st.add_index(w_i + 1); w_st.add_index(w_i + 11)
 				w_st.add_index(w_i + 1); w_st.add_index(w_i + 12); w_st.add_index(w_i + 11)
 				
+		# ДОДАЙ ОСЬ ЦІ ДВА РЯДКИ:
 		w_st.generate_normals()
-		w_st.generate_tangents() 
+		w_st.generate_tangents()
+		
 		water_data = w_st.commit()
 
-	if not is_cancelled:
-		call_deferred("_on_thread_finished", {"mesh": final_mesh, "shape": col_shape, "grass": grass_transforms, "water": water_data})
+	call_deferred("_on_thread_finished", {"mesh": final_mesh, "shape": col_shape, "grass": grass_transforms, "water": water_data})
 
 func _on_thread_finished(data: Dictionary):
-	if is_cancelled: return
-	
-	# Правильне завершення задачі WorkerThreadPool
 	if task_id != -1: 
 		WorkerThreadPool.wait_for_task_completion(task_id)
 		task_id = -1
-		
-	terrain_mesh_instance.mesh = data["mesh"]
+	if is_cancelled:
+		queue_free()
+		return
 	
-	if not has_collision:
-		var s_body = StaticBody3D.new()
-		var c_node = CollisionShape3D.new()
-		c_node.shape = data["shape"]
-		s_body.add_child(c_node)
-		terrain_mesh_instance.add_child(s_body)
-		static_body_ref = s_body
-		has_collision = true
+	if data.is_empty(): return
+	
+	terrain_mesh_instance.mesh = data["mesh"]
+	var s_body = StaticBody3D.new()
+	var c_node = CollisionShape3D.new()
+	c_node.shape = data["shape"]
+	s_body.add_child(c_node)
+	terrain_mesh_instance.add_child(s_body)
 	
 	if grass_mesh and data["grass"].size() > 0:
 		mmi = MultiMeshInstance3D.new()
@@ -179,12 +191,9 @@ func _on_thread_finished(data: Dictionary):
 		w_inst.material_override = load("res://Materials/water_mat.tres")
 		add_child(w_inst)
 	
-	is_ready = true # Встановлюємо мітку готовності
+	is_ready = true
 	chunk_ready.emit(self)
 
-func _exit_tree():
+func cancel_and_free():
 	is_cancelled = true
-	# Правильна зупинка при виході з дерева
-	if task_id != -1: 
-		WorkerThreadPool.wait_for_task_completion(task_id)
-		task_id = -1
+	hide()

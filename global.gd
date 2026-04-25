@@ -1,6 +1,7 @@
 extends Node
 
 const WORLD_SIZE: float = 10000.0 # ПОВЕРНУТО ДО 10 000
+const ISLAND_RADIUS = 3000.0 # Можеш змінювати: чим менше, тим менший острів
 var world_seed: int = 777
 var custom_spawn_x: float = -1.0
 var custom_spawn_z: float = -1.0
@@ -36,12 +37,7 @@ func _setup_noises():
 	moisture_noise.seed = world_seed + 999
 	moisture_noise.frequency = 0.0005
 
-func get_raw_elevation(x: float, z: float) -> float:
-	var e = (elevation_noise.get_noise_2d(x, z) + 1.0) / 2.0
-	var center = WORLD_SIZE / 2.0
-	var dist = Vector2(x, z).distance_to(Vector2(center, center))
-	var edge_falloff = smoothstep(center * 0.75, center, dist)
-	return clamp(e - edge_falloff, 0.0, 1.0)
+
 
 func get_biome_data(x: float, z: float) -> Dictionary:
 	var e = get_raw_elevation(x, z)
@@ -76,3 +72,24 @@ func get_biome_data(x: float, z: float) -> Dictionary:
 			is_grassy = true
 			
 	return {"elevation": e, "moisture": m, "biome": biome_name, "color": color, "is_grassy": is_grassy}
+
+# Функція генерує значення від 0.0 (центр острова) до 1.0 (край острова і далі)
+func get_falloff(world_x: float, world_z: float) -> float:
+	var center = Vector2(WORLD_SIZE / 2.0, WORLD_SIZE / 2.0)
+	var current_pos = Vector2(world_x, world_z)
+	
+	var dist = current_pos.distance_to(center)
+	var t = clamp(dist / ISLAND_RADIUS, 0.0, 1.0)
+	
+	var a = 3.0
+	var b = 2.2
+	return pow(t, a) / (pow(t, a) + pow(b - b * t, a))
+
+# ОНОВИ СВОЮ ФУНКЦІЮ ОСЬ ТАК:
+func get_raw_elevation(x: float, z: float) -> float:
+	var e = (elevation_noise.get_noise_2d(x, z) + 1.0) / 2.0
+	
+	# Замість smoothstep використовуємо нову маску
+	var edge_falloff = get_falloff(x, z)
+	
+	return clamp(e - edge_falloff, 0.0, 1.0)
