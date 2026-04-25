@@ -32,14 +32,14 @@ func _find_valid_spawn_point() -> Vector3:
 	var center_x = (Global.map_width * Global.tile_size) / 2.0
 	var safe_points = []
 	
-	# Шукаємо всі пляжі та рівнини з JSON
-	for key in Global.map_data:
-		var tile = Global.map_data[key]
-		if tile["biome"] == "beach" or tile["biome"] == "grassland":
-			safe_points.append(Vector3(tile["x"] * Global.tile_size, 400.0, tile["y"] * Global.tile_size))
-			
+	if Global.map_width > 0:
+		for x in range(Global.map_width):
+			for z in range(Global.map_height):
+				var tile = Global.map_grid[x][z]
+				if tile["biome"] == "beach" or tile["biome"] == "grassland":
+					safe_points.append(Vector3(x * Global.tile_size, 400.0, z * Global.tile_size))
+				
 	if safe_points.size() > 0:
-		# Обираємо випадковий безпечний тайл
 		return safe_points[randi() % safe_points.size()]
 			
 	return Vector3(center_x, 400.0, center_x) 
@@ -92,14 +92,21 @@ func spawn_chunk(chunk_pos: Vector2):
 	add_child(chunk)
 	active_chunks[chunk_pos] = chunk
 	
-	# Більше не передаємо шуми, Godot сам візьме JSON з Global
 	chunk.start_generation(chunk_pos, CHUNK_SIZE, 16, terrain_material, procedural_grass_mesh, player)
 
 func _on_chunk_ready(chunk: Node3D):
 	if is_first_spawn and chunk.chunk_pos == current_player_chunk:
 		is_first_spawn = false
 		if player:
-			player.global_position.y = 250.0 
+			# ФІКС ПРОКОВАЛЮВАННЯ ПІД ТЕКСТУРИ:
+			# 1. Знаходимо реальну висоту гори під гравцем
+			var spawn_y = chunk._get_h(player.global_position.x, player.global_position.z)
+			player.global_position.y = spawn_y + 10.0 # Ставимо на 10 метрів вище
+			
+			# 2. Чекаємо два кадри фізики, щоб колізія 100% завантажилася в пам'ять
+			await get_tree().physics_frame
+			await get_tree().physics_frame
+			
 			player.process_mode = Node.PROCESS_MODE_INHERIT
 
 func _build_grass_mesh() -> Mesh:

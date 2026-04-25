@@ -1,28 +1,25 @@
 extends Control
 
+# === ЗМІННІ ІНТЕРФЕЙСУ ===
 @onready var map_preview = %MapPreview
 @onready var seed_input = %SeedInput
 @onready var random_button = %RandomButton
 @onready var start_button = %StartButton
 
-var noise = FastNoiseLite.new()
-var marker_rect: ColorRect # Маркер спавну, який ми створимо з коду
+var marker_rect: ColorRect # Маркер точки спавну
 
 func _ready():
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
-	
-	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise.frequency = 0.00045 
-	noise.fractal_octaves = 4
 
 	seed_input.text_changed.connect(_on_seed_changed)
 	random_button.pressed.connect(_generate_random_seed)
 	start_button.pressed.connect(_on_start_pressed)
 	
-	# ДОДАНО: Слухаємо кліки по прев'ю мапи
+	# Слухаємо кліки по мапі
 	map_preview.gui_input.connect(_on_map_gui_input)
 	
-	_generate_random_seed() 
+	# Одразу малюємо мапу, бо Global вже прочитав її з JSON
+	_draw_preview()
 
 func _generate_random_seed():
 	var new_seed = randi() % 999999
@@ -30,11 +27,9 @@ func _generate_random_seed():
 
 func _update_seed_and_map(new_seed: int):
 	Global.world_seed = new_seed
-	noise.seed = new_seed
 	seed_input.text = str(new_seed)
-	_draw_preview()
 	
-	# Скидаємо вибір спавну при зміні карти
+	# Скидаємо вибір точки спавну при оновленні меню
 	Global.custom_spawn_x = -1.0
 	if marker_rect:
 		marker_rect.queue_free()
@@ -44,9 +39,10 @@ func _on_seed_changed(new_text: String):
 	if new_text.is_valid_int():
 		_update_seed_and_map(new_text.to_int())
 
-# ДОДАНО: Обробка кліку та встановлення точки спавну
 func _on_map_gui_input(event: InputEvent):
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if Global.map_width == 0: return # Якщо мапа не завантажилась, не реагуємо
+		
 		var s = min(map_preview.size.x, map_preview.size.y)
 		var offset_x = (map_preview.size.x - s) / 2.0
 		var offset_y = (map_preview.size.y - s) / 2.0
@@ -58,13 +54,11 @@ func _on_map_gui_input(event: InputEvent):
 			var px = img_x / s
 			var py = img_y / s
 			
-			# ТЕПЕР МИ МНОЖИМО ВІДСОТОК НА РЕАЛЬНУ ШИРИНУ PYTHON МАПИ
+			# Переводимо координати кліку в реальні масштаби світу
 			Global.custom_spawn_x = px * (Global.map_width * Global.tile_size)
 			Global.custom_spawn_z = py * (Global.map_height * Global.tile_size)
 			
-			if not marker_rect:
-				marker_rect = ColorRect.new()
-			
+			# Малюємо маркер
 			if not marker_rect:
 				marker_rect = ColorRect.new()
 				marker_rect.color = Color.RED
@@ -74,13 +68,10 @@ func _on_map_gui_input(event: InputEvent):
 			marker_rect.position = event.position - marker_rect.size / 2.0
 
 func _draw_preview():
-	if Global.map_data.is_empty():
-		return
-		
-	# Створюємо зображення точнісінько розміром з вашу Python-мапу
+	if Global.map_width == 0: return
+	
 	var img = Image.create(Global.map_width, Global.map_height, false, Image.FORMAT_RGB8)
 	
-	# Використовуємо словник кольорів біомів з вашого world_chunk
 	var BIOME_COLORS = {
 		"ocean": Color(0.10, 0.30, 0.60),
 		"beach": Color(0.76, 0.70, 0.50),
@@ -98,20 +89,21 @@ func _draw_preview():
 		"tropical_rain_forest": Color(0.10, 0.30, 0.05)
 	}
 	
-	for key in Global.map_data:
-		var tile = Global.map_data[key]
-		var biome = tile["biome"]
-		var col = BIOME_COLORS.get(biome, Color.MAGENTA)
-		
-		# Додаємо трохи тіней за висотою для краси
-		var elevation = tile["elevation"]
-		if elevation > 0.1:
-			col = col.darkened(1.0 - elevation)
+	for x in range(Global.map_width):
+		for y in range(Global.map_height):
+			# === ОСЬ ТУТ БУЛА ПОМИЛКА З КВАДРАТНОЮ ДУЖКОЮ ===
+			var tile = Global.map_grid[x][y]
+			var biome = tile["biome"]
+			var col = BIOME_COLORS.get(biome, Color.MAGENTA)
 			
-		img.set_pixel(tile["x"], tile["y"], col)
-		
+			# Тіні для рельєфу гір на карті
+			var elevation = float(tile["elevation"])
+			if elevation > 0.1:
+				col = col.darkened(1.0 - elevation)
+				
+			img.set_pixel(x, y, col)
+			
 	map_preview.texture = ImageTexture.create_from_image(img)
-	# Встановлюємо Stretch Mode на Keep Aspect, щоб мапа не була розмитою
 	map_preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 
 func _on_start_pressed():

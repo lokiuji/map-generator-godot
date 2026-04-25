@@ -38,31 +38,44 @@ func _input(event):
 			_teleport_to_map_point(event.position)
 
 func _generate_map_image():
-	var img = Image.create(MAP_RES, MAP_RES, false, Image.FORMAT_RGB8)
-	var center = Global.WORLD_SIZE / 2.0
+	if Global.map_width == 0: return
 	
-	for y in range(MAP_RES):
-		for x in range(MAP_RES):
-			var wx = (float(x) / MAP_RES) * Global.WORLD_SIZE
-			var wz = (float(y) / MAP_RES) * Global.WORLD_SIZE
+	var img = Image.create(Global.map_width, Global.map_height, false, Image.FORMAT_RGB8)
+	var BIOME_COLORS = {
+		"ocean": Color(0.10, 0.30, 0.60),
+		"beach": Color(0.76, 0.70, 0.50),
+		"scorched": Color(0.25, 0.20, 0.20),
+		"bare": Color(0.45, 0.40, 0.35),
+		"tundra": Color(0.55, 0.65, 0.65),
+		"snow": Color(0.90, 0.95, 1.00),
+		"temperate_desert": Color(0.75, 0.65, 0.45),
+		"shrubland": Color(0.45, 0.55, 0.25),
+		"grassland": Color(0.20, 0.35, 0.15),
+		"temperate_deciduous_forest": Color(0.15, 0.30, 0.10),
+		"temperate_rain_forest": Color(0.10, 0.25, 0.08),
+		"subtropical_desert": Color(0.85, 0.70, 0.50),
+		"tropical_seasonal_forest": Color(0.30, 0.45, 0.10),
+		"tropical_rain_forest": Color(0.10, 0.30, 0.05)
+	}
+	
+	for x in range(Global.map_width):
+		for y in range(Global.map_height):
+			var tile = Global.map_grid[x][y]
+			var biome = tile["biome"]
+			var col = BIOME_COLORS.get(biome, Color.MAGENTA)
 			
-			var dist_from_center = Vector2(wx, wz).distance_to(Vector2(center, center))
-			
-			# Ті самі нові формули, що й у 3D світі
-			var edge_falloff = smoothstep(center * 0.7, center * 0.98, dist_from_center)
-			
-			var v = noise_continent.get_noise_2d(wx, wz)
-			v = v - edge_falloff * 2.0 # Ось ця зміна ключова!
-			
-			var col = Color.DARK_BLUE 
-			if v > -0.05: col = Color.CORNFLOWER_BLUE # Мілководдя
-			if v > 0.0: col = Color.PALE_GOLDENROD # Пляж
-			if v > 0.03: col = Color.FOREST_GREEN # Трава
-			if v > 0.35: col = Color.SLATE_GRAY # Гори 
-			
+			var elevation = float(tile["elevation"])
+			if elevation > 0.1: col = col.darkened(1.0 - elevation)
 			img.set_pixel(x, y, col)
-	
-	map_texture.texture = ImageTexture.create_from_image(img)
+			
+	# Заміни map_rect на ту назву TextureRect, яка використовується в твоєму скрипті (можливо, це $TextureRect)
+	$TextureRect.texture = ImageTexture.create_from_image(img)
+	$TextureRect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+
+func _process(_delta):
+	if Input.is_action_just_pressed("map"): # Перевір, чи налаштована клавіша "M" в Input Map
+		visible = !visible
+		if visible: _generate_map_image()
 
 func _teleport_to_map_point(_mouse_pos):
 	var local_mouse = map_texture.get_local_mouse_position()

@@ -1,7 +1,6 @@
 extends Node3D
 class_name WorldChunk
 
-# ПАЛІТРА БІОМІВ (відповідає назвам з вашого Python-скрипта)
 const BIOME_COLORS = {
 	"ocean": Color(0.10, 0.30, 0.60),
 	"beach": Color(0.76, 0.70, 0.50),
@@ -19,23 +18,18 @@ const BIOME_COLORS = {
 	"tropical_rain_forest": Color(0.10, 0.30, 0.05)
 }
 
-# === ШУМИ ДЛЯ МІКРО-РЕЛЬЄФУ (ГІБРИДНИЙ ПІДХІД) ===
 var noise_continent = FastNoiseLite.new()
 var noise_mountain = FastNoiseLite.new()
 
 func _ready():
-	# Налаштовуємо шуми для генерації дрібних деталей (камінців, пагорбів)
-	# Частота (frequency) тепер більша, бо це мікро-рельєф, а не цілі материки
-	
 	noise_continent.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise_continent.frequency = 0.005 # Робить невеликі горбочки на рівнинах
+	noise_continent.frequency = 0.005
 	noise_continent.seed = Global.world_seed 
 	
 	noise_mountain.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise_mountain.frequency = 0.01 # Робить гострі та деталізовані скелі
+	noise_mountain.frequency = 0.01 
 	noise_mountain.fractal_type = FastNoiseLite.FRACTAL_RIDGED 
 	noise_mountain.seed = Global.world_seed + 123
-# ==================================================
 
 var chunk_pos: Vector2
 var chunk_size: float
@@ -48,7 +42,6 @@ var grass_material = preload("res://Materials/grass_mat.tres")
 
 var player_ref: Node3D
 var mmi: MultiMeshInstance3D 
-
 var has_collision: bool = false
 var static_body_ref: StaticBody3D = null
 
@@ -87,57 +80,36 @@ func _process(_delta):
 				static_body_ref = null
 			has_collision = false
 
-# Зчитує біом для конкретних 3D-координат
-func _get_biome_data(world_x: float, world_z: float) -> Dictionary:
-	if Global.map_data.is_empty(): return {"elevation": 0.0, "biome": "ocean"}
-	
-	var gx = clamp(int(round(world_x / Global.tile_size)), 0, Global.map_width - 1)
-	var gz = clamp(int(round(world_z / Global.tile_size)), 0, Global.map_height - 1)
-	return Global.map_data.get(Vector2(gx, gz), {"elevation": 0.0, "biome": "ocean"})
-
-# Обчислює плавну висоту за допомогою білінійної інтерполяції між 4 клітинками JSON
-# Обчислює макро-висоту з JSON + мікро-рельєф з шумів
+# Швидка функція висоти на основі 2D масиву
 func _get_h(world_x: float, world_z: float) -> float:
-	if Global.map_data.is_empty(): return 0.0
+	if Global.map_width == 0: return 0.0
 	
-	# 1. Читаємо базову структуру світу з JSON
-	var gx = world_x / Global.tile_size
-	var gz = world_z / Global.tile_size
+	var gx = clamp(world_x / Global.tile_size, 0.0, float(Global.map_width - 1))
+	var gz = clamp(world_z / Global.tile_size, 0.0, float(Global.map_height - 1))
 	
-	var x0 = clamp(int(floor(gx)), 0, Global.map_width - 1)
-	var z0 = clamp(int(floor(gz)), 0, Global.map_height - 1)
-	var x1 = clamp(x0 + 1, 0, Global.map_width - 1)
-	var z1 = clamp(z0 + 1, 0, Global.map_height - 1)
+	var x0 = int(floor(gx))
+	var z0 = int(floor(gz))
+	var x1 = mini(x0 + 1, Global.map_width - 1)
+	var z1 = mini(z0 + 1, Global.map_height - 1)
 	
-	var tx = gx - floor(gx)
-	var tz = gz - floor(gz)
+	var tx = gx - float(x0)
+	var tz = gz - float(z0)
 	
-	# ФІКС СЕГМЕНТОВАНОСТІ: Згладжуємо переходи (Hermite interpolation)
 	tx = tx * tx * (3.0 - 2.0 * tx)
 	tz = tz * tz * (3.0 - 2.0 * tz)
 	
-	var h00 = Global.map_data.get(Vector2(x0, z0), {"elevation": 0.0})["elevation"]
-	var h10 = Global.map_data.get(Vector2(x1, z0), {"elevation": 0.0})["elevation"]
-	var h01 = Global.map_data.get(Vector2(x0, z1), {"elevation": 0.0})["elevation"]
-	var h11 = Global.map_data.get(Vector2(x1, z1), {"elevation": 0.0})["elevation"]
+	var h0 = lerp(float(Global.map_grid[x0][z0]["elevation"]), float(Global.map_grid[x1][z0]["elevation"]), tx)
+	var h1 = lerp(float(Global.map_grid[x0][z1]["elevation"]), float(Global.map_grid[x1][z1]["elevation"]), tx)
+	var json_h = lerp(h0, h1, tz)
 	
-	var h0 = lerp(h00, h10, tx)
-	var h1 = lerp(h01, h11, tx)
-	var json_h = lerp(h0, h1, tz) # Це макро-висота від Python (зазвичай 0.0 - 1.0)
-	
-	# 2. Будуємо основу рельєфу
 	var base_height = 0.0
 	if json_h < 0.1:
-		base_height = (json_h - 0.1) * 50.0 # Океан
+		base_height = (json_h - 0.1) * 50.0 
 	else:
-		# pow робить підніжжя пологими, а вершини крутими
 		base_height = pow(json_h - 0.1, 1.3) * 350.0 
 		
-	# 3. ДОДАЄМО НАШ ФІРМОВИЙ ПРОЦЕДУРНИЙ РЕЛЬЄФ ЗВЕРХУ!
 	var micro_noise = noise_continent.get_noise_2d(world_x, world_z) * 6.0
 	var mount_noise = max(0.0, noise_mountain.get_noise_2d(world_x, world_z)) * 180.0
-	
-	# Маска гір: дозволяємо гострим скелям з'являтися ТІЛЬКИ там, де Python згенерував височину
 	var mountain_mask = smoothstep(0.4, 0.8, json_h) 
 	
 	return 2.8 + base_height + micro_noise + (mount_noise * mountain_mask)
@@ -171,13 +143,26 @@ func _build_terrain_data_in_thread():
 			var exact_normal = _get_normal(world_x, world_z)
 			st.set_normal(exact_normal)
 			
-			# Отримуємо біом безпосередньо з Python JSON
-			var tile_info = _get_biome_data(world_x, world_z)
-			var biome_name = tile_info["biome"]
+			# === ФІКС СЕГМЕНТІВ: Плавне змішування кольорів біомів ===
+			var gx = clamp(world_x / Global.tile_size, 0.0, float(Global.map_width - 1))
+			var gz = clamp(world_z / Global.tile_size, 0.0, float(Global.map_height - 1))
+			var x0 = int(floor(gx))
+			var z0 = int(floor(gz))
+			var x1 = mini(x0 + 1, Global.map_width - 1)
+			var z1 = mini(z0 + 1, Global.map_height - 1)
 			
-			var vert_color = BIOME_COLORS.get(biome_name, Color.MAGENTA)
+			var tx = gx - float(x0)
+			var tz = gz - float(z0)
 			
-			# Сніг для шейдера
+			var c00 = BIOME_COLORS.get(Global.map_grid[x0][z0]["biome"], Color.MAGENTA)
+			var c10 = BIOME_COLORS.get(Global.map_grid[x1][z0]["biome"], Color.MAGENTA)
+			var c01 = BIOME_COLORS.get(Global.map_grid[x0][z1]["biome"], Color.MAGENTA)
+			var c11 = BIOME_COLORS.get(Global.map_grid[x1][z1]["biome"], Color.MAGENTA)
+			
+			# Білінійна інтерполяція кольору
+			var vert_color = c00.lerp(c10, tx).lerp(c01.lerp(c11, tx), tz)
+			# ========================================================
+			
 			var snow_weight = 0.0
 			if py > 140.0: snow_weight = clamp((py - 140.0) / 10.0, 0.0, 1.0)
 			vert_color.a = snow_weight
@@ -194,8 +179,9 @@ func _build_terrain_data_in_thread():
 				var h01 = _get_h(world_x, world_z + step)
 				var h11 = _get_h(world_x + step, world_z + step)
 				
-				# Трава росте тільки в зелених біомах
-				var is_grassy = biome_name in ["grassland", "temperate_deciduous_forest", "temperate_rain_forest", "shrubland"]
+				# Трава росте тільки в зелених біомах центрального пікселя
+				var cell_biome = Global.map_grid[x0][z0]["biome"]
+				var is_grassy = cell_biome in ["grassland", "temperate_deciduous_forest", "temperate_rain_forest", "shrubland"]
 				
 				if py > 0.3 and is_grassy:
 					var density = 5
@@ -207,8 +193,8 @@ func _build_terrain_data_in_thread():
 							for gz_idx in range(density):
 								var local_x = (gx_idx + rng.randf()) / float(density)
 								var local_z = (gz_idx + rng.randf()) / float(density)
-								var gx = world_x + local_x * step
-								var gz = world_z + local_z * step
+								var grass_x = world_x + local_x * step
+								var grass_z = world_z + local_z * step
 								
 								var g_py = 0.0
 								if local_x + local_z <= 1.0: 
@@ -221,7 +207,7 @@ func _build_terrain_data_in_thread():
 								g_py -= 0.1 
 								
 								if g_py > 4.0 and g_py < 140.0: 
-									var pos = Vector3(gx - offset_x, g_py, gz - offset_z)
+									var pos = Vector3(grass_x - offset_x, g_py, grass_z - offset_z)
 									var s_xz = rng.randf_range(1.5, 2.5) 
 									var s_y = rng.randf_range(1.0, 1.5)  
 									var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s_xz, s_y, s_xz))
@@ -249,7 +235,6 @@ func _build_terrain_data_in_thread():
 				var world_wx = offset_x + wx * w_step
 				var world_wz = offset_z + wz * w_step
 				
-				# Глибина океану замість старого шуму
 				var depth = _get_h(world_wx, world_wz)
 				var wave_mask = smoothstep(0.0, -15.0, depth)
 				
