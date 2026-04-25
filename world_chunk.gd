@@ -26,6 +26,9 @@ var continent: FastNoiseLite
 var player_ref: Node3D
 var mmi: MultiMeshInstance3D 
 
+var has_collision: bool = false
+var static_body_ref: StaticBody3D = null
+
 signal chunk_ready(chunk_node)
 
 func _ready():
@@ -71,10 +74,31 @@ func start_generation(pos: Vector2, size: float, res: int, material: Material,
 	thread.start(_build_terrain_data_in_thread)
 
 func _process(_delta):
-	if mmi and player_ref:
+	if player_ref:
 		var dist = global_position.distance_to(player_ref.global_position)
-		# Трава видима лише в радіусі 100-120 метрів (приблизно 2 чанки)
-		mmi.visible = dist < 120.0
+		
+		# 1. ОПТИМІЗАЦІЯ ТРАВИ (залишається як було)
+		if mmi:
+			mmi.visible = dist < 100.0
+
+		# 2. ОПТИМІЗАЦІЯ ФІЗИКИ (Нове!)
+		# Якщо ми близько (в сусідньому чанку) і колізії ще немає — створюємо
+		if dist < 80.0 and not has_collision:
+			if terrain_mesh_instance.mesh != null:
+				terrain_mesh_instance.create_trimesh_collision()
+				has_collision = true
+				# Знаходимо створений StaticBody3D, щоб потім його видалити
+				for child in terrain_mesh_instance.get_children():
+					if child is StaticBody3D:
+						static_body_ref = child
+						break
+						
+		# Якщо ми відійшли далеко і колізія є — видаляємо її для економії пам'яті
+		elif dist > 100.0 and has_collision:
+			if static_body_ref:
+				static_body_ref.queue_free()
+				static_body_ref = null
+			has_collision = false
 
 # --- Спільна функція висоти з ЕКСКАВАТОРОМ БІОМІВ ---
 func _get_h(world_x: float, world_z: float) -> float:
@@ -226,7 +250,7 @@ func _build_terrain_data_in_thread():
 func _on_thread_finished(data: Dictionary):
 	thread.wait_to_finish() 
 	terrain_mesh_instance.mesh = data["mesh"]
-	terrain_mesh_instance.create_trimesh_collision()
+	#terrain_mesh_instance.create_trimesh_collision()
 	
 	if grass_mesh and data["grass"].size() > 0:
 		mmi = MultiMeshInstance3D.new() 
