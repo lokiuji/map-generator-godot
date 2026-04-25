@@ -1,43 +1,49 @@
 shader_type spatial;
 
-// === КОЛЬОРИ ІДЕАЛЬНО ЗІСТИКОВАНІ З ТРАВОЮ ===
-// Базовий колір землі тепер ТОЧНО дорівнює color_bottom з трави!
-uniform vec3 color_grass : source_color = vec3(0.12, 0.28, 0.08);
-uniform vec3 color_forest : source_color = vec3(0.08, 0.20, 0.05);
+uniform vec3 rock_color : source_color = vec3(0.35, 0.35, 0.4);
+uniform vec3 dirt_color : source_color = vec3(0.40, 0.25, 0.15);
+uniform vec3 snow_color : source_color = vec3(0.9, 0.95, 1.0);
 
-uniform vec3 color_sand : source_color = vec3(0.76, 0.70, 0.50);
-uniform vec3 color_rock : source_color = vec3(0.45, 0.45, 0.45);
-uniform vec3 color_snow : source_color = vec3(0.95, 0.95, 0.95);
+uniform float dirt_slope_threshold = 0.35; // Збільшено для чіткості
+uniform float rock_slope_threshold = 0.6;  // Збільшено для чіткості
+uniform float blend_amount = 0.08;         // Зменшено вдвічі для меншого градієнта
 
-varying float v_height;
-varying float v_moisture;
+uniform float snow_height_start = 150.0;
+uniform float snow_height_full = 180.0;
+
+varying vec3 world_normal;
+varying float world_y;
 
 void vertex() {
-	v_height = (MODEL_MATRIX * vec4(VERTEX, 1.0)).y;
-	v_moisture = COLOR.r; 
+	world_normal = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
+	// Передаємо висоту вершини у фрагментний процесор
+	world_y = (MODEL_MATRIX * vec4(VERTEX, 1.0)).y;
 }
 
 void fragment() {
-	// Рахуємо крутизну схилу (чим ближче до 1.0, тим плоскіша земля)
-	float slope = NORMAL.y; 
+	vec3 biome_color = COLOR.rgb;
+	float slope = dot(normalize(world_normal), vec3(0.0, 1.0, 0.0));
+	float steepness = 1.0 - slope; 
 	
-	vec3 color;
-	if (v_moisture < -0.15) {
-		color = color_sand; 
-	} else {
-		// Трава росте там, де не занадто круто (slope > 0.7)
-		color = mix(color_grass, color_forest, smoothstep(-0.15, 0.5, v_moisture));
-	}
-
-	// Якщо схил крутий (slope < 0.65) — це скеля, незалежно від висоти!
-	if (slope < 0.65) {
-		color = mix(color_rock, color, smoothstep(0.5, 0.65, slope));
-	}
+	// Розрахунок масок нахилу
+	float dirt_weight = smoothstep(dirt_slope_threshold - blend_amount, dirt_slope_threshold + blend_amount, steepness);
+	float rock_weight = smoothstep(rock_slope_threshold - blend_amount, rock_slope_threshold + blend_amount, steepness);
 	
-	// Сніг залишаємо тільки на дуже великій висоті
-	if (v_height > 120.0) {
-		color = mix(color, color_snow, smoothstep(120.0, 160.0, v_height));
-	}
+	// Розрахунок маски снігу за висотою
+	float snow_mask = smoothstep(snow_height_start, snow_height_full, world_y);
 	
-	ALBEDO = color;
+	// 1. Базове змішування за нахилом (Трава -> Земля -> Скеля)
+	vec3 slope_color = mix(biome_color, dirt_color, dirt_weight);
+	slope_color = mix(slope_color, rock_color, rock_weight);
+	
+	// 2. Накладання снігу
+	// На великій висоті ми замінюємо все (і траву, і скелі) на сніг, 
+	// але скелі можуть трохи "проступати", якщо вони дуже круті
+	float rock_on_snow = smoothstep(0.8, 0.95, steepness); // Тільки на дуже стрімких обривах сніг не тримається
+	vec3 final_snow = mix(snow_color, rock_color, rock_on_snow * 0.5);
+	
+	vec3 final_color = mix(slope_color, final_snow, snow_mask);
+	
+	ALBEDO = final_color;
+	ROUGHNESS = 0.8;
 }

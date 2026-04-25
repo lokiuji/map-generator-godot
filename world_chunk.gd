@@ -175,9 +175,43 @@ func _build_terrain_data_in_thread():
 			
 			# --- ДОДАНО ДЛЯ БЕЗШОВНОГО ОСВІТЛЕННЯ ---
 			var exact_normal = _get_normal(world_x, world_z)
-			st.set_normal(exact_normal)
+			st.set_normal(exact_normal) # <--- ОСЬ ЦЕЙ РЯДОК БУВ ПРОПУЩЕНИЙ!
+			# ----------------------------------------
 			
-			st.set_color(Color(moist, 0, 0))
+			# === ФІКС КОЛЬОРІВ БІОМІВ (ЧІТКІ ПЕРЕХОДИ ТА СНІГ) ===
+			var sand_color = Color(0.76, 0.70, 0.50)
+			var dirt_color = Color(0.40, 0.25, 0.15)
+			var grass_base = Color(0.18, 0.38, 0.15)
+			var snow_color = Color(0.9, 0.95, 1.0) # Світло-блакитний відтінок снігу
+			
+			var vert_color = grass_base
+			
+			if py < 3.8:
+				vert_color = sand_color
+			elif py < 4.2:
+				# Дуже швидкий перехід (всього 0.4м) від піску до землі
+				var t = (py - 3.8) / 0.4
+				vert_color = sand_color.lerp(dirt_color, t)
+			elif py < 5.0:
+				# Швидкий перехід від землі до трави
+				var t = (py - 4.2) / 0.8
+				vert_color = dirt_color.lerp(grass_base, t)
+			elif py > 160.0:
+				# Зона вічного снігу (вище 160 метрів)
+				if py < 175.0:
+					# Перехід від трави до снігу на схилах високих гір
+					var t = (py - 160.0) / 15.0
+					vert_color = grass_base.lerp(snow_color, t)
+				else:
+					vert_color = snow_color
+			else:
+				# Звичайна трава з варіацією вологості
+				var moist_normalized = clamp((moist + 1.0) / 2.0, 0.0, 1.0)
+				vert_color = grass_base.lerp(Color(0.25, 0.48, 0.18), moist_normalized)
+			
+			st.set_color(vert_color)
+			# ======================================================
+			
 			st.set_uv(Vector2(float(x) / resolution, float(z) / resolution))
 			st.add_vertex(Vector3(x * step, py, z * step))
 			if py < 2.9: needs_water = true
