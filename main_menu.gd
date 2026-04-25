@@ -57,8 +57,13 @@ func _on_map_gui_input(event: InputEvent):
 		if img_x >= 0 and img_x <= s and img_y >= 0 and img_y <= s:
 			var px = img_x / s
 			var py = img_y / s
-			Global.custom_spawn_x = px * Global.WORLD_SIZE
-			Global.custom_spawn_z = py * Global.WORLD_SIZE
+			
+			# ТЕПЕР МИ МНОЖИМО ВІДСОТОК НА РЕАЛЬНУ ШИРИНУ PYTHON МАПИ
+			Global.custom_spawn_x = px * (Global.map_width * Global.tile_size)
+			Global.custom_spawn_z = py * (Global.map_height * Global.tile_size)
+			
+			if not marker_rect:
+				marker_rect = ColorRect.new()
 			
 			if not marker_rect:
 				marker_rect = ColorRect.new()
@@ -69,29 +74,45 @@ func _on_map_gui_input(event: InputEvent):
 			marker_rect.position = event.position - marker_rect.size / 2.0
 
 func _draw_preview():
-	var res = 150 
-	var img = Image.create(res, res, false, Image.FORMAT_RGB8)
-	var center = Global.WORLD_SIZE / 2.0
+	if Global.map_data.is_empty():
+		return
+		
+	# Створюємо зображення точнісінько розміром з вашу Python-мапу
+	var img = Image.create(Global.map_width, Global.map_height, false, Image.FORMAT_RGB8)
 	
-	for y in range(res):
-		for x in range(res):
-			var wx = (float(x) / res) * Global.WORLD_SIZE
-			var wz = (float(y) / res) * Global.WORLD_SIZE
+	# Використовуємо словник кольорів біомів з вашого world_chunk
+	var BIOME_COLORS = {
+		"ocean": Color(0.10, 0.30, 0.60),
+		"beach": Color(0.76, 0.70, 0.50),
+		"scorched": Color(0.25, 0.20, 0.20),
+		"bare": Color(0.45, 0.40, 0.35),
+		"tundra": Color(0.55, 0.65, 0.65),
+		"snow": Color(0.90, 0.95, 1.00),
+		"temperate_desert": Color(0.75, 0.65, 0.45),
+		"shrubland": Color(0.45, 0.55, 0.25),
+		"grassland": Color(0.20, 0.35, 0.15),
+		"temperate_deciduous_forest": Color(0.15, 0.30, 0.10),
+		"temperate_rain_forest": Color(0.10, 0.25, 0.08),
+		"subtropical_desert": Color(0.85, 0.70, 0.50),
+		"tropical_seasonal_forest": Color(0.30, 0.45, 0.10),
+		"tropical_rain_forest": Color(0.10, 0.30, 0.05)
+	}
+	
+	for key in Global.map_data:
+		var tile = Global.map_data[key]
+		var biome = tile["biome"]
+		var col = BIOME_COLORS.get(biome, Color.MAGENTA)
+		
+		# Додаємо трохи тіней за висотою для краси
+		var elevation = tile["elevation"]
+		if elevation > 0.1:
+			col = col.darkened(1.0 - elevation)
 			
-			var dist = Vector2(wx, wz).distance_to(Vector2(center, center))
-			var edge_falloff = smoothstep(center * 0.7, center * 0.98, dist)
-			
-			var v = noise.get_noise_2d(wx, wz)
-			v = v - edge_falloff * 2.0
-			
-			var col = Color.DARK_BLUE
-			if v > -0.05: col = Color.CORNFLOWER_BLUE
-			if v > 0.0: col = Color.PALE_GOLDENROD
-			if v > 0.03: col = Color.FOREST_GREEN
-			if v > 0.35: col = Color.SLATE_GRAY
-			img.set_pixel(x, y, col)
-			
+		img.set_pixel(tile["x"], tile["y"], col)
+		
 	map_preview.texture = ImageTexture.create_from_image(img)
+	# Встановлюємо Stretch Mode на Keep Aspect, щоб мапа не була розмитою
+	map_preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 
 func _on_start_pressed():
 	get_tree().change_scene_to_file("res://node_3d.tscn")

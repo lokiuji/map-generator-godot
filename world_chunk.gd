@@ -19,6 +19,24 @@ const BIOME_COLORS = {
 	"tropical_rain_forest": Color(0.10, 0.30, 0.05)
 }
 
+# === ШУМИ ДЛЯ МІКРО-РЕЛЬЄФУ (ГІБРИДНИЙ ПІДХІД) ===
+var noise_continent = FastNoiseLite.new()
+var noise_mountain = FastNoiseLite.new()
+
+func _ready():
+	# Налаштовуємо шуми для генерації дрібних деталей (камінців, пагорбів)
+	# Частота (frequency) тепер більша, бо це мікро-рельєф, а не цілі материки
+	
+	noise_continent.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise_continent.frequency = 0.005 # Робить невеликі горбочки на рівнинах
+	noise_continent.seed = Global.world_seed 
+	
+	noise_mountain.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise_mountain.frequency = 0.01 # Робить гострі та деталізовані скелі
+	noise_mountain.fractal_type = FastNoiseLite.FRACTAL_RIDGED 
+	noise_mountain.seed = Global.world_seed + 123
+# ==================================================
+
 var chunk_pos: Vector2
 var chunk_size: float
 var resolution: int
@@ -78,9 +96,11 @@ func _get_biome_data(world_x: float, world_z: float) -> Dictionary:
 	return Global.map_data.get(Vector2(gx, gz), {"elevation": 0.0, "biome": "ocean"})
 
 # Обчислює плавну висоту за допомогою білінійної інтерполяції між 4 клітинками JSON
+# Обчислює макро-висоту з JSON + мікро-рельєф з шумів
 func _get_h(world_x: float, world_z: float) -> float:
 	if Global.map_data.is_empty(): return 0.0
 	
+	# 1. Читаємо базову структуру світу з JSON
 	var gx = world_x / Global.tile_size
 	var gz = world_z / Global.tile_size
 	
@@ -92,6 +112,10 @@ func _get_h(world_x: float, world_z: float) -> float:
 	var tx = gx - floor(gx)
 	var tz = gz - floor(gz)
 	
+	# ФІКС СЕГМЕНТОВАНОСТІ: Згладжуємо переходи (Hermite interpolation)
+	tx = tx * tx * (3.0 - 2.0 * tx)
+	tz = tz * tz * (3.0 - 2.0 * tz)
+	
 	var h00 = Global.map_data.get(Vector2(x0, z0), {"elevation": 0.0})["elevation"]
 	var h10 = Global.map_data.get(Vector2(x1, z0), {"elevation": 0.0})["elevation"]
 	var h01 = Global.map_data.get(Vector2(x0, z1), {"elevation": 0.0})["elevation"]
@@ -99,10 +123,24 @@ func _get_h(world_x: float, world_z: float) -> float:
 	
 	var h0 = lerp(h00, h10, tx)
 	var h1 = lerp(h01, h11, tx)
-	var final_h = lerp(h0, h1, tz)
+	var json_h = lerp(h0, h1, tz) # Це макро-висота від Python (зазвичай 0.0 - 1.0)
 	
-	# У Python ocean < 0.1. Ми зсуваємо це на нуль і розтягуємо горизонт гір на 400 метрів
-	return (final_h - 0.1) * 400.0
+	# 2. Будуємо основу рельєфу
+	var base_height = 0.0
+	if json_h < 0.1:
+		base_height = (json_h - 0.1) * 50.0 # Океан
+	else:
+		# pow робить підніжжя пологими, а вершини крутими
+		base_height = pow(json_h - 0.1, 1.3) * 350.0 
+		
+	# 3. ДОДАЄМО НАШ ФІРМОВИЙ ПРОЦЕДУРНИЙ РЕЛЬЄФ ЗВЕРХУ!
+	var micro_noise = noise_continent.get_noise_2d(world_x, world_z) * 6.0
+	var mount_noise = max(0.0, noise_mountain.get_noise_2d(world_x, world_z)) * 180.0
+	
+	# Маска гір: дозволяємо гострим скелям з'являтися ТІЛЬКИ там, де Python згенерував височину
+	var mountain_mask = smoothstep(0.4, 0.8, json_h) 
+	
+	return 2.8 + base_height + micro_noise + (mount_noise * mountain_mask)
 
 func _get_normal(world_x: float, world_z: float) -> Vector3:
 	var d = 0.5 
