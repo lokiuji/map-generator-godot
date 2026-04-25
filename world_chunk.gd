@@ -47,10 +47,11 @@ func _get_h(world_x: float, world_z: float) -> float:
 	var e = b_data["elevation"]
 	if e < 0.35: return 5.0 + (e - 0.35) * 40.0
 	
-	var land_base = (e - 0.35) * 150.0
-	var ridge_mask = smoothstep(0.5, 0.8, e)
-	# Менше множення, щоб не було гострих стін на чанках 50м
-	var peaks = Global.mountain_noise.get_noise_2d(world_x, world_z) * 350.0 
+	# ПЛАВНІ ГОРИ: м'якший перехід і менша висота
+	var land_base = pow(e - 0.35, 1.2) * 150.0 
+	var ridge_mask = smoothstep(0.4, 0.85, e)
+	var peaks = Global.mountain_noise.get_noise_2d(world_x, world_z) * 180.0 
+	
 	return 5.0 + land_base + (peaks * ridge_mask)
 
 func _get_normal(world_x: float, world_z: float) -> Vector3:
@@ -91,11 +92,16 @@ func _build_terrain_data_in_thread():
 			if x < resolution and z < resolution and py > 5.5 and b_data["is_grassy"]:
 				var cell_n = _get_normal(wx + step/2.0, wz + step/2.0)
 				if cell_n.dot(Vector3.UP) > 0.85:
-					var density = 8 # Було 4. Тепер трави значно більше!
+					var density = 8
 					for i in range(density):
 						var lx = (rng.randf()) * step
 						var lz = (rng.randf()) * step
-						var g_pos = Vector3(x * step + lx, _get_h(wx + lx, wz + lz), z * step + lz)
+						
+						# КОРЕКЦІЯ ВИСОТИ: опускаємо траву на 0.25 під землю
+						var raw_y = _get_h(wx + lx, wz + lz)
+						var grass_y = raw_y - 0.25 
+						
+						var g_pos = Vector3(x * step + lx, grass_y, z * step + lz)
 						var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.5, rng.randf_range(0.8, 1.2), 1.5))
 						grass_transforms.append(Transform3D(basis, g_pos))
 
@@ -140,7 +146,11 @@ func _build_terrain_data_in_thread():
 
 func _on_thread_finished(data: Dictionary):
 	if is_cancelled: return
-	if thread and thread.is_started(): thread.wait_to_finish() 
+	
+	# БЕЗПЕЧНЕ ЗАКРИТТЯ ПОТОКУ
+	if thread: 
+		thread.wait_to_finish()
+		thread = null # Очищаємо, щоб не закрити двічі
 		
 	terrain_mesh_instance.mesh = data["mesh"]
 	
@@ -174,4 +184,7 @@ func _on_thread_finished(data: Dictionary):
 
 func _exit_tree():
 	is_cancelled = true
-	if thread and thread.is_started(): thread.wait_to_finish()
+	# БЕЗПЕЧНЕ ЗАКРИТТЯ ПРИ ВИДАЛЕННІ
+	if thread: 
+		thread.wait_to_finish()
+		thread = null

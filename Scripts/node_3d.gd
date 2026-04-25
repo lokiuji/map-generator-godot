@@ -47,10 +47,9 @@ func _process(_delta):
 			current_player_chunk = new_chunk
 			update_chunks(current_player_chunk)
 
-	# Обробка черги (швидше, якщо черга велика)
-	var limit = 4 if chunk_spawn_queue.size() > 5 else 1
-	for i in range(limit):
-		if chunk_spawn_queue.size() > 0: spawn_chunk(chunk_spawn_queue.pop_front())
+	# СУВОРЕ ОБМЕЖЕННЯ: генеруємо графіку лише для 1 чанку за кадр
+	if chunk_spawn_queue.size() > 0: 
+		spawn_chunk(chunk_spawn_queue.pop_front())
 
 func update_chunks(center: Vector2):
 	var desired = []
@@ -75,16 +74,19 @@ func spawn_chunk(p: Vector2):
 	c.start_generation(p, CHUNK_SIZE, 16, terrain_material, procedural_grass_mesh, player)
 
 func _on_chunk_ready(chunk: Node3D):
-	# Коли центральний чанк (там де ми маємо з'явитися) ГОТОВИЙ:
 	if is_world_loading and chunk.chunk_pos == current_player_chunk:
 		is_world_loading = false
 		if player:
 			var sy = chunk._get_h(target_spawn_pos.x, target_spawn_pos.z)
-			# Ставимо гравця точно на згенеровану землю
-			player.global_position = Vector3(target_spawn_pos.x, sy + 2.0, target_spawn_pos.z)
+			
+			# ОЧІКУВАННЯ ФІЗИКИ: даємо рушію 2 кадри на побудову колізії
+			await get_tree().physics_frame
+			await get_tree().physics_frame
+			
+			# Ставимо гравця трохи вище землі (наприклад, +3.0) щоб він впевнено приземлився
+			player.global_position = Vector3(target_spawn_pos.x, sy + 3.0, target_spawn_pos.z)
 			if player.has_method("set_velocity"): player.set_velocity(Vector3.ZERO)
 			
-			# ВМИКАЄМО ГРАВЦЯ
 			player.visible = true
 			player.process_mode = Node.PROCESS_MODE_INHERIT
 
