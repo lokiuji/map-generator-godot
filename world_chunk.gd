@@ -1,13 +1,23 @@
 extends Node3D
 class_name WorldChunk
 
-# === РОЗМІРИ СВІТУ ===
-var WORLD_SIZE_METERS = 0.0
-
-# === ШУМИ ===
-var noise_continent = FastNoiseLite.new()
-var noise_mountain = FastNoiseLite.new()
-var noise_moisture = FastNoiseLite.new() # Для трави/пустель
+# ПАЛІТРА БІОМІВ (відповідає назвам з вашого Python-скрипта)
+const BIOME_COLORS = {
+	"ocean": Color(0.10, 0.30, 0.60),
+	"beach": Color(0.76, 0.70, 0.50),
+	"scorched": Color(0.25, 0.20, 0.20),
+	"bare": Color(0.45, 0.40, 0.35),
+	"tundra": Color(0.55, 0.65, 0.65),
+	"snow": Color(0.90, 0.95, 1.00),
+	"temperate_desert": Color(0.75, 0.65, 0.45),
+	"shrubland": Color(0.45, 0.55, 0.25),
+	"grassland": Color(0.20, 0.35, 0.15),
+	"temperate_deciduous_forest": Color(0.15, 0.30, 0.10),
+	"temperate_rain_forest": Color(0.10, 0.25, 0.08),
+	"subtropical_desert": Color(0.85, 0.70, 0.50),
+	"tropical_seasonal_forest": Color(0.30, 0.45, 0.10),
+	"tropical_rain_forest": Color(0.10, 0.30, 0.05)
+}
 
 var chunk_pos: Vector2
 var chunk_size: float
@@ -18,11 +28,6 @@ var terrain_mesh_instance: MeshInstance3D
 var grass_mesh: Mesh
 var grass_material = preload("res://Materials/grass_mat.tres") 
 
-var noise: FastNoiseLite
-var moisture: FastNoiseLite
-var mountain: FastNoiseLite
-var continent: FastNoiseLite 
-
 var player_ref: Node3D
 var mmi: MultiMeshInstance3D 
 
@@ -31,38 +36,10 @@ var static_body_ref: StaticBody3D = null
 
 signal chunk_ready(chunk_node)
 
-func _ready():
-	# Зчитуємо 10000.0 метрів з глобального сховища
-	WORLD_SIZE_METERS = Global.WORLD_SIZE
-	
-	# Континенти: використовуємо сід з меню
-	noise_continent.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise_continent.frequency = 0.00045 
-	noise_continent.fractal_octaves = 4
-	noise_continent.seed = Global.world_seed 
-
-	# Гори: додаємо зміщення до сіда, щоб вони не повторювали форму островів
-	noise_mountain.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise_mountain.frequency = 0.002
-	noise_mountain.fractal_type = FastNoiseLite.FRACTAL_RIDGED 
-	noise_mountain.fractal_octaves = 5
-	noise_mountain.seed = Global.world_seed + 123
-	
-	# Вологість (для біомів/трави)
-	noise_moisture.frequency = 0.0005
-	noise_moisture.seed = Global.world_seed + 999
-
-func start_generation(pos: Vector2, size: float, res: int, material: Material, 
-	g_noise: FastNoiseLite, g_moist: FastNoiseLite, g_mount: FastNoiseLite, 
-	g_cont: FastNoiseLite, g_mesh: Mesh, p_player: Node3D):
-	
+func start_generation(pos: Vector2, size: float, res: int, material: Material, g_mesh: Mesh, p_player: Node3D):
 	chunk_pos = pos
 	chunk_size = size
 	resolution = res
-	noise = g_noise 
-	moisture = g_moist 
-	mountain = g_mount
-	continent = g_cont
 	grass_mesh = g_mesh
 	player_ref = p_player
 	
@@ -76,77 +53,64 @@ func start_generation(pos: Vector2, size: float, res: int, material: Material,
 func _process(_delta):
 	if player_ref:
 		var dist = global_position.distance_to(player_ref.global_position)
-		
-		# 1. ОПТИМІЗАЦІЯ ТРАВИ (залишається як було)
-		if mmi:
-			mmi.visible = dist < 100.0
+		if mmi: mmi.visible = dist < 100.0
 
-		# 2. ОПТИМІЗАЦІЯ ФІЗИКИ (Нове!)
-		# Якщо ми близько (в сусідньому чанку) і колізії ще немає — створюємо
 		if dist < 80.0 and not has_collision:
 			if terrain_mesh_instance.mesh != null:
 				terrain_mesh_instance.create_trimesh_collision()
 				has_collision = true
-				# Знаходимо створений StaticBody3D, щоб потім його видалити
 				for child in terrain_mesh_instance.get_children():
 					if child is StaticBody3D:
 						static_body_ref = child
 						break
-						
-		# Якщо ми відійшли далеко і колізія є — видаляємо її для економії пам'яті
 		elif dist > 100.0 and has_collision:
 			if static_body_ref:
 				static_body_ref.queue_free()
 				static_body_ref = null
 			has_collision = false
 
-# --- Спільна функція висоти з ЕКСКАВАТОРОМ БІОМІВ ---
+# Зчитує біом для конкретних 3D-координат
+func _get_biome_data(world_x: float, world_z: float) -> Dictionary:
+	if Global.map_data.is_empty(): return {"elevation": 0.0, "biome": "ocean"}
+	
+	var gx = clamp(int(round(world_x / Global.tile_size)), 0, Global.map_width - 1)
+	var gz = clamp(int(round(world_z / Global.tile_size)), 0, Global.map_height - 1)
+	return Global.map_data.get(Vector2(gx, gz), {"elevation": 0.0, "biome": "ocean"})
+
+# Обчислює плавну висоту за допомогою білінійної інтерполяції між 4 клітинками JSON
 func _get_h(world_x: float, world_z: float) -> float:
-	var logic_x = wrapf(world_x, 0.0, WORLD_SIZE_METERS)
-	var logic_z = wrapf(world_z, 0.0, WORLD_SIZE_METERS)
-
-	var center = WORLD_SIZE_METERS / 2.0
-	var dist_from_center = Vector2(logic_x, logic_z).distance_to(Vector2(center, center))
+	if Global.map_data.is_empty(): return 0.0
 	
-	# МАСКА КРАЇВ: Тепер вона починає топити землю лише біля самого кордону (від 70% радіуса)
-	# Це дозволить континентам генеруватися вільно і не бути єдиною плямою по центру
-	var edge_falloff = smoothstep(center * 0.7, center * 0.98, dist_from_center)
-
-	var cont_val = noise_continent.get_noise_2d(logic_x, logic_z)
-	# Віднімаємо значення маски на краях, щоб змусити там згенеруватися океан
-	cont_val = cont_val - edge_falloff * 2.0 
-
-	var base_height = 0.0
-	if cont_val < 0.0:
-		base_height = cont_val * 40.0 # Глибина океану
-	else:
-		# ФІКС БЕРЕГІВ: pow(cont_val, 1.4) робить пляжі дуже пологими, а материк плавно піднімається
-		base_height = pow(cont_val, 1.4) * 130.0
-
-	var mount_val = noise_mountain.get_noise_2d(logic_x, logic_z)
+	var gx = world_x / Global.tile_size
+	var gz = world_z / Global.tile_size
 	
-	# ФІКС БУРУЛЬОК ТА ПРОВАЛІВ: Відкидаємо від'ємні значення (гори йдуть лише вгору)
-	mount_val = max(0.0, mount_val)
+	var x0 = clamp(int(floor(gx)), 0, Global.map_width - 1)
+	var z0 = clamp(int(floor(gz)), 0, Global.map_height - 1)
+	var x1 = clamp(x0 + 1, 0, Global.map_width - 1)
+	var z1 = clamp(z0 + 1, 0, Global.map_height - 1)
+	
+	var tx = gx - floor(gx)
+	var tz = gz - floor(gz)
+	
+	var h00 = Global.map_data.get(Vector2(x0, z0), {"elevation": 0.0})["elevation"]
+	var h10 = Global.map_data.get(Vector2(x1, z0), {"elevation": 0.0})["elevation"]
+	var h01 = Global.map_data.get(Vector2(x0, z1), {"elevation": 0.0})["elevation"]
+	var h11 = Global.map_data.get(Vector2(x1, z1), {"elevation": 0.0})["elevation"]
+	
+	var h0 = lerp(h00, h10, tx)
+	var h1 = lerp(h01, h11, tx)
+	var final_h = lerp(h0, h1, tz)
+	
+	# У Python ocean < 0.1. Ми зсуваємо це на нуль і розтягуємо горизонт гір на 400 метрів
+	return (final_h - 0.1) * 400.0
 
-	# Маска гір робить їх більш природними і лише в глибині суші
-	var mountain_mask = smoothstep(0.1, 0.4, cont_val)
-	var final_mountain_height = mount_val * 400.0 * mountain_mask 
-
-	return 2.8 + base_height + final_mountain_height
-
-# === НОВЕ: Математичний розрахунок ідеального освітлення ===
 func _get_normal(world_x: float, world_z: float) -> Vector3:
-	var d = 0.5 # Крок перевірки (пів метра в кожну сторону)
-	
-	# "Мацаємо" висоту рельєфу довкола нашої точки
+	var d = 0.5 
 	var h_left = _get_h(world_x - d, world_z)
 	var h_right = _get_h(world_x + d, world_z)
 	var h_down = _get_h(world_x, world_z - d)
 	var h_up = _get_h(world_x, world_z + d)
-	
-	# Формуємо вектор, який вказує точно перпендикулярно до схилу
-	var normal = Vector3(h_left - h_right, 2.0 * d, h_down - h_up)
-	return normal.normalized()
+	return Vector3(h_left - h_right, 2.0 * d, h_down - h_up).normalized()
 
 func _build_terrain_data_in_thread():
 	var st = SurfaceTool.new()
@@ -160,60 +124,30 @@ func _build_terrain_data_in_thread():
 	var grass_transforms = []
 	var needs_water = false
 	
-	# === ГЕНЕРАЦІЯ ЗЕМЛІ ТА ТРАВИ ===
 	for z in range(resolution + 1):
 		for x in range(resolution + 1):
 			var world_x = offset_x + x * step
 			var world_z = offset_z + z * step
 			
-			var logic_x = wrapf(world_x, 0.0, WORLD_SIZE_METERS)
-			var logic_z = wrapf(world_z, 0.0, WORLD_SIZE_METERS)
-			
 			var py = _get_h(world_x, world_z)
-			var moist = moisture.get_noise_2d(logic_x, logic_z)
-			var cell_cont = continent.get_noise_2d(logic_x, logic_z)
-			
-			# --- ДОДАНО ДЛЯ БЕЗШОВНОГО ОСВІТЛЕННЯ ---
 			var exact_normal = _get_normal(world_x, world_z)
-			st.set_normal(exact_normal) # <--- ОСЬ ЦЕЙ РЯДОК БУВ ПРОПУЩЕНИЙ!
-			# ----------------------------------------
+			st.set_normal(exact_normal)
 			
-			# === ФІКС КОЛЬОРІВ БІОМІВ (ЧІТКІ ПЕРЕХОДИ ТА СНІГ) ===
-			var sand_color = Color(0.76, 0.70, 0.50)
-			var dirt_color = Color(0.40, 0.25, 0.15)
-			var grass_base = Color(0.18, 0.38, 0.15)
-			var snow_color = Color(0.9, 0.95, 1.0) # Світло-блакитний відтінок снігу
+			# Отримуємо біом безпосередньо з Python JSON
+			var tile_info = _get_biome_data(world_x, world_z)
+			var biome_name = tile_info["biome"]
 			
-			var vert_color = grass_base
+			var vert_color = BIOME_COLORS.get(biome_name, Color.MAGENTA)
 			
-			if py < 3.8:
-				vert_color = sand_color
-			elif py < 4.2:
-				# Дуже швидкий перехід (всього 0.4м) від піску до землі
-				var t = (py - 3.8) / 0.4
-				vert_color = sand_color.lerp(dirt_color, t)
-			elif py < 5.0:
-				# Швидкий перехід від землі до трави
-				var t = (py - 4.2) / 0.8
-				vert_color = dirt_color.lerp(grass_base, t)
-			elif py > 160.0:
-				# Зона вічного снігу (вище 160 метрів)
-				if py < 175.0:
-					# Перехід від трави до снігу на схилах високих гір
-					var t = (py - 160.0) / 15.0
-					vert_color = grass_base.lerp(snow_color, t)
-				else:
-					vert_color = snow_color
-			else:
-				# Звичайна трава з варіацією вологості
-				var moist_normalized = clamp((moist + 1.0) / 2.0, 0.0, 1.0)
-				vert_color = grass_base.lerp(Color(0.25, 0.48, 0.18), moist_normalized)
+			# Сніг для шейдера
+			var snow_weight = 0.0
+			if py > 140.0: snow_weight = clamp((py - 140.0) / 10.0, 0.0, 1.0)
+			vert_color.a = snow_weight
 			
 			st.set_color(vert_color)
-			# ======================================================
-			
 			st.set_uv(Vector2(float(x) / resolution, float(z) / resolution))
 			st.add_vertex(Vector3(x * step, py, z * step))
+			
 			if py < 2.9: needs_water = true
 			
 			if x < resolution and z < resolution:
@@ -222,48 +156,54 @@ func _build_terrain_data_in_thread():
 				var h01 = _get_h(world_x, world_z + step)
 				var h11 = _get_h(world_x + step, world_z + step)
 				
-				if py > 0.3 and moist > -0.3:
+				# Трава росте тільки в зелених біомах
+				var is_grassy = biome_name in ["grassland", "temperate_deciduous_forest", "temperate_rain_forest", "shrubland"]
+				
+				if py > 0.3 and is_grassy:
 					var density = 5
-					for gx_idx in range(density):
-						for gz_idx in range(density):
-							var local_x = (gx_idx + rng.randf()) / float(density)
-							var local_z = (gz_idx + rng.randf()) / float(density)
-							var gx = world_x + local_x * step
-							var gz = world_z + local_z * step
-							var g_py = 0.0
-							
-							if local_x + local_z <= 1.0: 
-								g_py = h00 + local_x * (h10 - h00) + local_z * (h01 - h00)
-							else:
-								var nx = 1.0 - local_x
-								var nz = 1.0 - local_z
-								g_py = h11 + nx * (h01 - h11) + nz * (h10 - h11)
+					var cell_normal = _get_normal(world_x + step/2.0, world_z + step/2.0)
+					var cell_steepness = 1.0 - cell_normal.dot(Vector3.UP)
+					
+					if cell_steepness < 0.25:
+						for gx_idx in range(density):
+							for gz_idx in range(density):
+								var local_x = (gx_idx + rng.randf()) / float(density)
+								var local_z = (gz_idx + rng.randf()) / float(density)
+								var gx = world_x + local_x * step
+								var gz = world_z + local_z * step
 								
-							g_py -= 0.1 
-							if g_py > 3.2 and g_py < 180.0: 
-								var pos = Vector3(gx - offset_x, g_py, gz - offset_z)
-								var s_xz = rng.randf_range(1.5, 2.5) 
-								var s_y = rng.randf_range(1.0, 1.5)  
-								var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s_xz, s_y, s_xz))
-								grass_transforms.append(Transform3D(basis, pos))
+								var g_py = 0.0
+								if local_x + local_z <= 1.0: 
+									g_py = h00 + local_x * (h10 - h00) + local_z * (h01 - h00)
+								else:
+									var nx = 1.0 - local_x
+									var nz = 1.0 - local_z
+									g_py = h11 + nx * (h01 - h11) + nz * (h10 - h11)
+									
+								g_py -= 0.1 
+								
+								if g_py > 4.0 and g_py < 140.0: 
+									var pos = Vector3(gx - offset_x, g_py, gz - offset_z)
+									var s_xz = rng.randf_range(1.5, 2.5) 
+									var s_y = rng.randf_range(1.0, 1.5)  
+									var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s_xz, s_y, s_xz))
+									grass_transforms.append(Transform3D(basis, pos))
 			
 	for z in range(resolution):
 		for x in range(resolution):
-			var i = x + z * (resolution + 1)
-			st.add_index(i)
-			st.add_index(i + 1)
-			st.add_index(i + resolution + 1)
-			st.add_index(i + 1)
-			st.add_index(i + resolution + 2)
-			st.add_index(i + resolution + 1)
-	#st.generate_normals()
+			var idx = x + z * (resolution + 1)
+			st.add_index(idx)
+			st.add_index(idx + 1)
+			st.add_index(idx + resolution + 1)
+			st.add_index(idx + 1)
+			st.add_index(idx + resolution + 2)
+			st.add_index(idx + resolution + 1)
 	
-	# === НОВЕ: ГЕНЕРАЦІЯ "РОЗУМНОЇ" ВОДИ ===
 	var water_mesh_data = null
 	if needs_water:
 		var w_st = SurfaceTool.new()
 		w_st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		var w_res = 15 # Деталізація сітки води
+		var w_res = 15
 		var w_step = chunk_size / w_res
 		
 		for wz in range(w_res + 1):
@@ -271,30 +211,24 @@ func _build_terrain_data_in_thread():
 				var world_wx = offset_x + wx * w_step
 				var world_wz = offset_z + wz * w_step
 				
-				var logic_wx = wrapf(world_wx, 0.0, WORLD_SIZE_METERS)
-				var logic_wz = wrapf(world_wz, 0.0, WORLD_SIZE_METERS)
+				# Глибина океану замість старого шуму
+				var depth = _get_h(world_wx, world_wz)
+				var wave_mask = smoothstep(0.0, -15.0, depth)
 				
-				# 1. Читаємо шум континентів у цій точці
-				var w_c_raw = continent.get_noise_2d(logic_wx, logic_wz)
-				
-				# 2. МАСКА БІОМІВ
-				var wave_mask = smoothstep(-0.10, -0.30, w_c_raw)
-				
-				# 3. Записуємо маску в червоний канал кольору вершини (COLOR.r)
 				w_st.set_color(Color(wave_mask, 0, 0))
 				w_st.set_uv(Vector2(float(wx) / w_res, float(wz) / w_res))
-				# Вода генерується вже в правильних координатах чанка
 				w_st.add_vertex(Vector3(wx * w_step, 2.8, wz * w_step))
 				
 		for wz in range(w_res):
 			for wx in range(w_res):
-				var i = wx + wz * (w_res + 1)
-				w_st.add_index(i)
-				w_st.add_index(i + 1)
-				w_st.add_index(i + w_res + 1)
-				w_st.add_index(i + 1)
-				w_st.add_index(i + w_res + 2)
-				w_st.add_index(i + w_res + 1)
+				var w_idx = wx + wz * (w_res + 1)
+				w_st.add_index(w_idx)
+				w_st.add_index(w_idx + 1)
+				w_st.add_index(w_idx + w_res + 1)
+				w_st.add_index(w_idx + 1)
+				w_st.add_index(w_idx + w_res + 2)
+				w_st.add_index(w_idx + w_res + 1)
+		
 		w_st.generate_normals()
 		water_mesh_data = w_st.commit()
 
@@ -303,7 +237,6 @@ func _build_terrain_data_in_thread():
 func _on_thread_finished(data: Dictionary):
 	thread.wait_to_finish() 
 	terrain_mesh_instance.mesh = data["mesh"]
-	#terrain_mesh_instance.create_trimesh_collision()
 	
 	if grass_mesh and data["grass"].size() > 0:
 		mmi = MultiMeshInstance3D.new() 
@@ -317,12 +250,10 @@ func _on_thread_finished(data: Dictionary):
 			mm.set_instance_transform(i, data["grass"][i])
 		add_child(mmi)
 		
-	# === ВСТАНОВЛЮЄМО НАШУ НОВУ ВОДУ ===
 	if data["has_water"] and data["water_mesh"] != null:
 		var water_instance = MeshInstance3D.new()
 		water_instance.mesh = data["water_mesh"]
 		water_instance.material_override = load("res://Materials/water_mat.tres")
-		# Позиція (0,0,0), бо ми згенерували вершини в точних координатах вище
 		water_instance.position = Vector3.ZERO 
 		add_child(water_instance)
 	
