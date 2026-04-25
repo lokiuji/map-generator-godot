@@ -29,7 +29,13 @@ func _input(event):
 			get_tree().quit()
 		if event.keycode == KEY_F:
 			fly_mode = !fly_mode
-			collision.disabled = fly_mode
+			# ВИПРАВЛЕННЯ: Безпечне перемикання фізики
+			collision.set_deferred("disabled", fly_mode)
+			
+			if not fly_mode:
+				# Коли вимикаємо політ, скидаємо інерцію падіння, 
+				# щоб не пробити землю на величезній швидкості
+				velocity.y = 0.0
 
 func _physics_process(delta):
 	var underwater = camera.global_position.y < water_level

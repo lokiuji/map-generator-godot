@@ -71,11 +71,12 @@ func _generate_grass():
 	for i in range(grass_count):
 		var pos = Vector3(randf_range(-25, 25), 0, randf_range(-25, 25)) 
 		
-		var basis = Basis().rotated(Vector3.UP, randf() * TAU)
+		# Перейменовано з basis на grass_basis
+		var grass_basis = Basis().rotated(Vector3.UP, randf() * TAU)
 		var scale_factor = randf_range(0.8, 1.3) * 5.0
-		basis = basis.scaled(Vector3(scale_factor, scale_factor, scale_factor))
+		grass_basis = grass_basis.scaled(Vector3(scale_factor, scale_factor, scale_factor))
 		
-		var t = Transform3D(basis, pos)
+		var t = Transform3D(grass_basis, pos)
 		mmi_high.multimesh.set_instance_transform(i, t)
 		if mmi_low:
 			mmi_low.multimesh.set_instance_transform(i, t)

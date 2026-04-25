@@ -1,10 +1,10 @@
 extends Node3D
 class_name WorldChunk
-
+var is_ready: bool = false
 var chunk_pos: Vector2
 var chunk_size: float
 var resolution: int
-var thread: Thread
+var task_id: int = -1
 var terrain_mesh_instance: MeshInstance3D
 
 var grass_mesh: Mesh
@@ -15,7 +15,6 @@ var mmi: MultiMeshInstance3D
 var has_collision: bool = false
 var static_body_ref: StaticBody3D = null
 var is_cancelled: bool = false 
-
 signal chunk_ready(chunk_node)
 
 func start_generation(pos: Vector2, size: float, res: int, material: Material, g_mesh: Mesh, p_player: Node3D):
@@ -29,29 +28,29 @@ func start_generation(pos: Vector2, size: float, res: int, material: Material, g
 	terrain_mesh_instance.material_override = material
 	add_child(terrain_mesh_instance)
 	
-	thread = Thread.new()
-	thread.start(_build_terrain_data_in_thread)
+	# ЗАМІСТЬ Thread.new() використовуємо пул потоків Godot
+	task_id = WorkerThreadPool.add_task(_build_terrain_data_in_thread, true)
 
 func _process(_delta):
 	if player_ref:
+		# Рахуємо відстань від гравця до центру цього чанку
 		var dist = global_position.distance_to(player_ref.global_position)
-		if mmi: mmi.visible = dist < 100.0
-		if dist > 200.0 and has_collision:
-			if static_body_ref:
-				static_body_ref.queue_free()
-				static_body_ref = null
-			has_collision = false
+		
+		# Оптимізація рендеру: ховаємо дрібну траву вдалині
+		if mmi: 
+			mmi.visible = dist < 100.0
+			
+		# ВИДАЛЕНО: блок, який руйнував колізії (dist > 200.0) 
 
 func _get_h(world_x: float, world_z: float) -> float:
-	var b_data = Global.get_biome_data(world_x, world_z)
-	var e = b_data["elevation"]
+	# ОПТИМІЗАЦІЯ: Більше ніяких важких словників біому тут. Тільки сира висота.
+	var e = Global.get_raw_elevation(world_x, world_z)
+	
 	if e < 0.35: return 5.0 + (e - 0.35) * 40.0
 	
-	# ПЛАВНІ ГОРИ: м'якший перехід і менша висота
-	var land_base = pow(e - 0.35, 1.2) * 150.0 
+	var land_base = pow(e - 0.35, 1.2) * 150.0
 	var ridge_mask = smoothstep(0.4, 0.85, e)
 	var peaks = Global.mountain_noise.get_noise_2d(world_x, world_z) * 180.0 
-	
 	return 5.0 + land_base + (peaks * ridge_mask)
 
 func _get_normal(world_x: float, world_z: float) -> Vector3:
@@ -99,11 +98,11 @@ func _build_terrain_data_in_thread():
 						
 						# КОРЕКЦІЯ ВИСОТИ: опускаємо траву на 0.25 під землю
 						var raw_y = _get_h(wx + lx, wz + lz)
-						var grass_y = raw_y - 0.25 
+						var grass_y = raw_y - 0.25
 						
 						var g_pos = Vector3(x * step + lx, grass_y, z * step + lz)
-						var basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.5, rng.randf_range(0.8, 1.2), 1.5))
-						grass_transforms.append(Transform3D(basis, g_pos))
+						var grass_basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.5, rng.randf_range(0.8, 1.2), 1.5))
+						grass_transforms.append(Transform3D(grass_basis, g_pos))
 
 	if is_cancelled: return
 
@@ -147,10 +146,10 @@ func _build_terrain_data_in_thread():
 func _on_thread_finished(data: Dictionary):
 	if is_cancelled: return
 	
-	# БЕЗПЕЧНЕ ЗАКРИТТЯ ПОТОКУ
-	if thread: 
-		thread.wait_to_finish()
-		thread = null # Очищаємо, щоб не закрити двічі
+	# Правильне завершення задачі WorkerThreadPool
+	if task_id != -1: 
+		WorkerThreadPool.wait_for_task_completion(task_id)
+		task_id = -1
 		
 	terrain_mesh_instance.mesh = data["mesh"]
 	
@@ -180,11 +179,12 @@ func _on_thread_finished(data: Dictionary):
 		w_inst.material_override = load("res://Materials/water_mat.tres")
 		add_child(w_inst)
 	
+	is_ready = true # Встановлюємо мітку готовності
 	chunk_ready.emit(self)
 
 func _exit_tree():
 	is_cancelled = true
-	# БЕЗПЕЧНЕ ЗАКРИТТЯ ПРИ ВИДАЛЕННІ
-	if thread: 
-		thread.wait_to_finish()
-		thread = null
+	# Правильна зупинка при виході з дерева
+	if task_id != -1: 
+		WorkerThreadPool.wait_for_task_completion(task_id)
+		task_id = -1
