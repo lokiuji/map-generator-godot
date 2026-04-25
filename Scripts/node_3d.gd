@@ -29,20 +29,18 @@ func _find_valid_spawn_point() -> Vector3:
 	if Global.custom_spawn_x >= 0.0:
 		return Vector3(Global.custom_spawn_x, 400.0, Global.custom_spawn_z)
 		
-	var center_x = (Global.map_width * Global.tile_size) / 2.0
-	var safe_points = []
+	var rng = RandomNumberGenerator.new()
+	rng.seed = Global.world_seed 
 	
-	if Global.map_width > 0:
-		for x in range(Global.map_width):
-			for z in range(Global.map_height):
-				var tile = Global.map_grid[x][z]
-				if tile["biome"] == "beach" or tile["biome"] == "grassland":
-					safe_points.append(Vector3(x * Global.tile_size, 400.0, z * Global.tile_size))
-				
-	if safe_points.size() > 0:
-		return safe_points[randi() % safe_points.size()]
+	for i in range(150):
+		var rx = rng.randf_range(1000.0, Global.WORLD_SIZE - 1000.0)
+		var rz = rng.randf_range(1000.0, Global.WORLD_SIZE - 1000.0)
+		
+		var b_data = Global.get_biome_data(rx, rz)
+		if b_data["biome"] == "beach" or b_data["biome"] == "grassland":
+			return Vector3(rx, 400.0, rz)
 			
-	return Vector3(center_x, 400.0, center_x) 
+	return Vector3(Global.WORLD_SIZE / 2.0, 400.0, Global.WORLD_SIZE / 2.0) 
 
 func _process(_delta):
 	if player:
@@ -91,19 +89,23 @@ func spawn_chunk(chunk_pos: Vector2):
 	chunk.chunk_ready.connect(_on_chunk_ready) 
 	add_child(chunk)
 	active_chunks[chunk_pos] = chunk
-	
 	chunk.start_generation(chunk_pos, CHUNK_SIZE, 16, terrain_material, procedural_grass_mesh, player)
+
+# Scripts/node_3d.gd
 
 func _on_chunk_ready(chunk: Node3D):
 	if is_first_spawn and chunk.chunk_pos == current_player_chunk:
 		is_first_spawn = false
 		if player:
-			# ФІКС ПРОКОВАЛЮВАННЯ ПІД ТЕКСТУРИ:
-			# 1. Знаходимо реальну висоту гори під гравцем
-			var spawn_y = chunk._get_h(player.global_position.x, player.global_position.z)
-			player.global_position.y = spawn_y + 10.0 # Ставимо на 10 метрів вище
+			# Примушуємо чанк створити фізику ПРЯМО ЗАРАЗ
+			chunk._create_collision_now()
 			
-			# 2. Чекаємо два кадри фізики, щоб колізія 100% завантажилася в пам'ять
+			var spawn_y = chunk._get_h(player.global_position.x, player.global_position.z)
+			
+			# Підкидаємо гравця на 15 метрів вгору. Він впаде на тверду землю.
+			player.global_position.y = spawn_y + 15.0 
+			
+			# Даємо рушію 2 фізичні кадри, щоб активувати колізію
 			await get_tree().physics_frame
 			await get_tree().physics_frame
 			
@@ -112,20 +114,13 @@ func _on_chunk_ready(chunk: Node3D):
 func _build_grass_mesh() -> Mesh:
 	var st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var r = 0.45 
-	var h = 1.0  
-	var p1 = Vector3(0, 0, r)
-	var p2 = Vector3(r * 0.866, 0, -r * 0.5) 
-	var p3 = Vector3(-r * 0.866, 0, -r * 0.5) 
+	var r = 0.45; var h = 1.0  
+	var p1 = Vector3(0, 0, r); var p2 = Vector3(r * 0.866, 0, -r * 0.5); var p3 = Vector3(-r * 0.866, 0, -r * 0.5) 
 	var add_flipped_quad = func(a: Vector3, b: Vector3):
-		var v1 = a
-		var uv1 = Vector2(0, 1)
-		var v2 = b
-		var uv2 = Vector2(1, 1)
-		var v3 = b + Vector3(0, h, 0)
-		var uv3 = Vector2(1, 0)
-		var v4 = a + Vector3(0, h, 0)
-		var uv4 = Vector2(0, 0)
+		var v1 = a; var uv1 = Vector2(0, 1)
+		var v2 = b; var uv2 = Vector2(1, 1)
+		var v3 = b + Vector3(0, h, 0); var uv3 = Vector2(1, 0)
+		var v4 = a + Vector3(0, h, 0); var uv4 = Vector2(0, 0)
 		st.set_uv(uv1); st.add_vertex(v1)
 		st.set_uv(uv3); st.add_vertex(v3)
 		st.set_uv(uv2); st.add_vertex(v2)
