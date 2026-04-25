@@ -133,6 +133,21 @@ func _get_h(world_x: float, world_z: float) -> float:
 	var final_mountain_height = mount_val * 400.0 * mountain_mask 
 
 	return 2.8 + base_height + final_mountain_height
+
+# === НОВЕ: Математичний розрахунок ідеального освітлення ===
+func _get_normal(world_x: float, world_z: float) -> Vector3:
+	var d = 0.5 # Крок перевірки (пів метра в кожну сторону)
+	
+	# "Мацаємо" висоту рельєфу довкола нашої точки
+	var h_left = _get_h(world_x - d, world_z)
+	var h_right = _get_h(world_x + d, world_z)
+	var h_down = _get_h(world_x, world_z - d)
+	var h_up = _get_h(world_x, world_z + d)
+	
+	# Формуємо вектор, який вказує точно перпендикулярно до схилу
+	var normal = Vector3(h_left - h_right, 2.0 * d, h_down - h_up)
+	return normal.normalized()
+
 func _build_terrain_data_in_thread():
 	var st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -157,7 +172,11 @@ func _build_terrain_data_in_thread():
 			var py = _get_h(world_x, world_z)
 			var moist = moisture.get_noise_2d(logic_x, logic_z)
 			var cell_cont = continent.get_noise_2d(logic_x, logic_z)
-
+			
+			# --- ДОДАНО ДЛЯ БЕЗШОВНОГО ОСВІТЛЕННЯ ---
+			var exact_normal = _get_normal(world_x, world_z)
+			st.set_normal(exact_normal)
+			
 			st.set_color(Color(moist, 0, 0))
 			st.set_uv(Vector2(float(x) / resolution, float(z) / resolution))
 			st.add_vertex(Vector3(x * step, py, z * step))
@@ -203,7 +222,7 @@ func _build_terrain_data_in_thread():
 			st.add_index(i + 1)
 			st.add_index(i + resolution + 2)
 			st.add_index(i + resolution + 1)
-	st.generate_normals()
+	#st.generate_normals()
 	
 	# === НОВЕ: ГЕНЕРАЦІЯ "РОЗУМНОЇ" ВОДИ ===
 	var water_mesh_data = null
