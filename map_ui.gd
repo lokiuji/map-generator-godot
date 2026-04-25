@@ -4,7 +4,6 @@ extends CanvasLayer
 @onready var player_marker: ColorRect = %PlayerMarker
 @onready var player = get_tree().get_first_node_in_group("player")
 
-const WORLD_SIZE = 6000.0 
 const MAP_RES = 250 
 
 var noise_continent = FastNoiseLite.new()
@@ -17,7 +16,7 @@ func _ready():
 	noise_continent.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	# ФІКС: Частота ТЕПЕР ІДЕАЛЬНО ЗБІГАЄТЬСЯ З world_chunk.gd (було 0.0005)
 	noise_continent.frequency = 0.00045 
-	noise_continent.seed = 777
+	noise_continent.seed = Global.world_seed
 	noise_continent.fractal_octaves = 4
 	
 	map_texture.custom_minimum_size = Vector2(600, 600)
@@ -40,24 +39,26 @@ func _input(event):
 
 func _generate_map_image():
 	var img = Image.create(MAP_RES, MAP_RES, false, Image.FORMAT_RGB8)
-	var center = WORLD_SIZE / 2.0
+	var center = Global.WORLD_SIZE / 2.0
 	
 	for y in range(MAP_RES):
 		for x in range(MAP_RES):
-			var wx = (float(x) / MAP_RES) * WORLD_SIZE
-			var wz = (float(y) / MAP_RES) * WORLD_SIZE
+			var wx = (float(x) / MAP_RES) * Global.WORLD_SIZE
+			var wz = (float(y) / MAP_RES) * Global.WORLD_SIZE
 			
 			var dist_from_center = Vector2(wx, wz).distance_to(Vector2(center, center))
-			var edge_falloff = 1.0 - smoothstep(center * 0.7, center * 0.98, dist_from_center)
+			
+			# Ті самі нові формули, що й у 3D світі
+			var edge_falloff = smoothstep(center * 0.7, center * 0.98, dist_from_center)
 			
 			var v = noise_continent.get_noise_2d(wx, wz)
-			v = lerp(-1.0, v, edge_falloff)
+			v = v - edge_falloff * 2.0 # Ось ця зміна ключова!
 			
 			var col = Color.DARK_BLUE 
-			if v > -0.15: col = Color.CORNFLOWER_BLUE 
-			if v > 0.0: col = Color.PALE_GOLDENROD 
-			if v > 0.03: col = Color.FOREST_GREEN 
-			if v > 0.35: col = Color.SLATE_GRAY 
+			if v > -0.05: col = Color.CORNFLOWER_BLUE # Мілководдя
+			if v > 0.0: col = Color.PALE_GOLDENROD # Пляж
+			if v > 0.03: col = Color.FOREST_GREEN # Трава
+			if v > 0.35: col = Color.SLATE_GRAY # Гори 
 			
 			img.set_pixel(x, y, col)
 	
@@ -77,8 +78,8 @@ func _teleport_to_map_point(_mouse_pos):
 		var percent_x = img_x / s
 		var percent_y = img_y / s
 		
-		var target_x = percent_x * WORLD_SIZE
-		var target_z = percent_y * WORLD_SIZE
+		var target_x = percent_x * Global.WORLD_SIZE
+		var target_z = percent_y * Global.WORLD_SIZE
 		
 		if player:
 			# Кидаємо гравця з висоти, щоб він не опинився під землею
@@ -92,8 +93,8 @@ func _process(_delta):
 	if not visible or not player or map_texture == null or player_marker == null:
 		return
 		
-	var percent_x = wrapf(player.global_position.x, 0.0, WORLD_SIZE) / WORLD_SIZE
-	var percent_z = wrapf(player.global_position.z, 0.0, WORLD_SIZE) / WORLD_SIZE
+	var percent_x = wrapf(player.global_position.x, 0.0, Global.WORLD_SIZE) / Global.WORLD_SIZE
+	var percent_z = wrapf(player.global_position.z, 0.0, Global.WORLD_SIZE) / Global.WORLD_SIZE
 	
 	var s = min(map_texture.size.x, map_texture.size.y)
 	var offset_x = (map_texture.size.x - s) / 2.0

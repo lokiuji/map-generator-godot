@@ -1,0 +1,72 @@
+[gd_scene format=3 uid="uid://cqjvub55qax8j"]
+
+[ext_resource type="Script" uid="uid://m4qj2jww34g5" path="res://main_menu.gd" id="1_06t4h"]
+
+[node name="MainMenu" type="Control" unique_id=1544675801]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_06t4h")
+
+[node name="Background" type="ColorRect" parent="." unique_id=274301250]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CenterContainer" type="CenterContainer" parent="." unique_id=432623431]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -239.0
+offset_right = 200.0
+offset_bottom = 239.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer" unique_id=1002741240]
+layout_mode = 2
+
+[node name="MapPreview" type="TextureRect" parent="CenterContainer/VBoxContainer" unique_id=893877945]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(400, 400)
+layout_mode = 2
+size_flags_horizontal = 4
+expand_mode = 1
+stretch_mode = 5
+
+[node name="SeedControl" type="HBoxContainer" parent="CenterContainer/VBoxContainer" unique_id=1345848945]
+layout_mode = 2
+
+[node name="SeedInput" type="LineEdit" parent="CenterContainer/VBoxContainer/SeedControl" unique_id=1070446089]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Your seed is..."
+alignment = 1
+
+[node name="RandomButton" type="Button" parent="CenterContainer/VBoxContainer/SeedControl" unique_id=1381904791]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 8
+text = "Random SEED"
+
+[node name="StartButton" type="Button" parent="CenterContainer/VBoxContainer" unique_id=2016889855]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "Lets Begin!"

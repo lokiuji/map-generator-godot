@@ -11,9 +11,13 @@ config_version=5
 [application]
 
 config/name="MapGeneratorGodot (Gimini)"
-run/main_scene="uid://jx5besewp0mf"
+run/main_scene="uid://cqjvub55qax8j"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
+
+[autoload]
+
+Global="*uid://dhvkeyb51ajub"
 
 [editor]
 

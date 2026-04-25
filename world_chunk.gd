@@ -2,9 +2,7 @@ extends Node3D
 class_name WorldChunk
 
 # === РОЗМІРИ СВІТУ ===
-const WORLD_CHUNKS = 50
-const CHUNK_SIZE = 120.0
-const WORLD_SIZE_METERS = WORLD_CHUNKS * CHUNK_SIZE # 6000.0 метрів
+var WORLD_SIZE_METERS = 0.0
 
 # === ШУМИ ===
 var noise_continent = FastNoiseLite.new()
@@ -31,21 +29,25 @@ var mmi: MultiMeshInstance3D
 signal chunk_ready(chunk_node)
 
 func _ready():
-	# 1. КОНТИНЕНТИ: Частота 0.0004-0.0005 на 6000м дає ~6-9 великих об'єктів.
+	# Зчитуємо 10000.0 метрів з глобального сховища
+	WORLD_SIZE_METERS = Global.WORLD_SIZE
+	
+	# Континенти: використовуємо сід з меню
 	noise_continent.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	noise_continent.frequency = 0.00045 
 	noise_continent.fractal_octaves = 4
-	noise_continent.seed = 777 
+	noise_continent.seed = Global.world_seed 
 
-	# 2. ГОРИ: Робимо їх вузькими хребтами
+	# Гори: додаємо зміщення до сіда, щоб вони не повторювали форму островів
 	noise_mountain.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise_mountain.frequency = 0.002 # Вища частота для деталей
+	noise_mountain.frequency = 0.002
 	noise_mountain.fractal_type = FastNoiseLite.FRACTAL_RIDGED 
 	noise_mountain.fractal_octaves = 5
+	noise_mountain.seed = Global.world_seed + 123
 	
-	# Вологість (для біомів)
+	# Вологість (для біомів/трави)
 	noise_moisture.frequency = 0.0005
-	noise_moisture.seed = 999
+	noise_moisture.seed = Global.world_seed + 999
 
 func start_generation(pos: Vector2, size: float, res: int, material: Material, 
 	g_noise: FastNoiseLite, g_moist: FastNoiseLite, g_mount: FastNoiseLite, 
@@ -71,7 +73,8 @@ func start_generation(pos: Vector2, size: float, res: int, material: Material,
 func _process(_delta):
 	if mmi and player_ref:
 		var dist = global_position.distance_to(player_ref.global_position)
-		mmi.visible = dist < 160.0
+		# Трава видима лише в радіусі 100-120 метрів (приблизно 2 чанки)
+		mmi.visible = dist < 120.0
 
 # --- Спільна функція висоти з ЕКСКАВАТОРОМ БІОМІВ ---
 func _get_h(world_x: float, world_z: float) -> float:
@@ -80,26 +83,32 @@ func _get_h(world_x: float, world_z: float) -> float:
 
 	var center = WORLD_SIZE_METERS / 2.0
 	var dist_from_center = Vector2(logic_x, logic_z).distance_to(Vector2(center, center))
-	var edge_falloff = 1.0 - smoothstep(center * 0.7, center * 0.98, dist_from_center)
+	
+	# МАСКА КРАЇВ: Тепер вона починає топити землю лише біля самого кордону (від 70% радіуса)
+	# Це дозволить континентам генеруватися вільно і не бути єдиною плямою по центру
+	var edge_falloff = smoothstep(center * 0.7, center * 0.98, dist_from_center)
 
 	var cont_val = noise_continent.get_noise_2d(logic_x, logic_z)
-	cont_val = lerp(-1.0, cont_val, edge_falloff) 
+	# Віднімаємо значення маски на краях, щоб змусити там згенеруватися океан
+	cont_val = cont_val - edge_falloff * 2.0 
 
 	var base_height = 0.0
 	if cont_val < 0.0:
-		base_height = cont_val * 60.0 # Глибина океану
+		base_height = cont_val * 40.0 # Глибина океану
 	else:
-		# ПЛАВНИЙ ПІДЙОМ: pow(cont_val, 0.5) робить береги крутішими
-		base_height = pow(cont_val, 0.5) * 140.0
+		# ФІКС БЕРЕГІВ: pow(cont_val, 1.4) робить пляжі дуже пологими, а материк плавно піднімається
+		base_height = pow(cont_val, 1.4) * 130.0
 
 	var mount_val = noise_mountain.get_noise_2d(logic_x, logic_z)
 	
-	# МАСКА ГІР: Гори ростуть тільки в глибині
-	var mountain_mask = smoothstep(0.3, 0.6, cont_val)
-	var final_mountain_height = mount_val * 450.0 * mountain_mask 
+	# ФІКС БУРУЛЬОК ТА ПРОВАЛІВ: Відкидаємо від'ємні значення (гори йдуть лише вгору)
+	mount_val = max(0.0, mount_val)
+
+	# Маска гір робить їх більш природними і лише в глибині суші
+	var mountain_mask = smoothstep(0.1, 0.4, cont_val)
+	var final_mountain_height = mount_val * 400.0 * mountain_mask 
 
 	return 2.8 + base_height + final_mountain_height
-
 func _build_terrain_data_in_thread():
 	var st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -136,8 +145,8 @@ func _build_terrain_data_in_thread():
 				var h01 = _get_h(world_x, world_z + step)
 				var h11 = _get_h(world_x + step, world_z + step)
 				
-				if cell_cont > -0.2 and moist > -0.15:
-					var density = 11 
+				if py > 0.3 and moist > -0.3:
+					var density = 5
 					for gx_idx in range(density):
 						for gz_idx in range(density):
 							var local_x = (gx_idx + rng.randf()) / float(density)
@@ -154,7 +163,7 @@ func _build_terrain_data_in_thread():
 								g_py = h11 + nx * (h01 - h11) + nz * (h10 - h11)
 								
 							g_py -= 0.1 
-							if g_py > 3.2 and g_py < 40.0: 
+							if g_py > 3.2 and g_py < 180.0: 
 								var pos = Vector3(gx - offset_x, g_py, gz - offset_z)
 								var s_xz = rng.randf_range(1.5, 2.5) 
 								var s_y = rng.randf_range(1.0, 1.5)  
@@ -177,7 +186,7 @@ func _build_terrain_data_in_thread():
 	if needs_water:
 		var w_st = SurfaceTool.new()
 		w_st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		var w_res = 30 # Деталізація сітки води
+		var w_res = 15 # Деталізація сітки води
 		var w_step = chunk_size / w_res
 		
 		for wz in range(w_res + 1):
