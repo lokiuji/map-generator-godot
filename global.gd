@@ -133,3 +133,13 @@ func get_biome_data(x: float, z: float) -> Dictionary:
 			is_grassy = true
 			
 	return {"elevation": e, "moisture": m, "biome": biome_name, "color": color, "is_grassy": is_grassy}
+# Допоміжна функція для node_3d.gd, щоб знати висоту без доступу до чанку
+func _get_final_height(world_x: float, world_z: float) -> float:
+	var e = get_raw_elevation(world_x, world_z)
+	if e < 0.35: 
+		return 5.0 + (e - 0.35) * 40.0
+	
+	var land_base = pow(e - 0.35, 1.2) * 150.0
+	var ridge_mask = smoothstep(0.4, 0.85, e)
+	var peaks = mountain_noise.get_noise_2d(world_x, world_z) * 180.0 
+	return 5.0 + land_base + (peaks * ridge_mask)
