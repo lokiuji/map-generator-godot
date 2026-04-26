@@ -1,10 +1,10 @@
 extends CharacterBody3D
 
-const SPEED = 12.0 # Твоя швидкість бігу
-var gravity = 35.0 # Наша нова сильна гравітація для відкритого світу
+const SPEED = 12.0 
+var gravity = 35.0 
 const BOB_FREQ = 0.25
 const BOB_AMP = 0.08
-@export var water_level = -20.0 # Змінна, яку можна міняти в редакторі
+@export var water_level = -20.0 
 
 @onready var camera = $Camera3D
 @onready var collision = $CollisionShape3D
@@ -15,7 +15,7 @@ var fly_mode = false
 
 func _ready():
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
-	floor_stop_on_slope = true # Забороняє гравцеві ковзати на похилих поверхнях
+	floor_stop_on_slope = true 
 	
 func _input(event):
 	if event is InputEventMouseMotion and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
@@ -31,33 +31,22 @@ func _input(event):
 		if event.keycode == KEY_F:
 			fly_mode = !fly_mode
 			collision.set_deferred("disabled", fly_mode)
-			# КРИТИЧНО: Повністю зупиняємо гравця при вході/виході з польоту
 			velocity = Vector3.ZERO
 			if not fly_mode:
-				# Коли вимикаємо політ, скидаємо інерцію падіння, 
-				# щоб не пробити землю на величезній швидкості
 				velocity.y = 0.0
 
 func _physics_process(delta):
+	# АБСОЛЮТНИЙ ЗАХИСТ ВІД ПАДІННЯ (Запобігає кривому горизонту)
+	if global_position.y < -150.0:
+		global_position.y = 800.0
+		velocity = Vector3.ZERO
+
 	var underwater = camera.global_position.y < water_level
 	
 	if fly_mode:
 		_process_fly_mode(delta)
-		# У режимі польоту фізика повністю ігнорується
 	else:
 		_process_walk_mode(delta, underwater)
-		
-		# ПЕРЕМАГАЄМО ДРЕЙФ:
-		# Викликаємо рух тільки якщо є ввід АБО гравець у повітрі.
-		# Якщо гравець стоїть і натисків немає — move_and_slide НЕ викликається, 
-		# тому рушій не зможе «штовхати» нас через помилки точності.
-		var horizontal_velocity = Vector2(velocity.x, velocity.z).length()
-		if horizontal_velocity > 0.05 or not is_on_floor():
-			move_and_slide()
-		else:
-			# Жорстка фіксація на місці
-			velocity.x = 0
-			velocity.z = 0
 
 func _process_fly_mode(delta):
 	var fly_speed = 80.0
@@ -75,7 +64,6 @@ func _process_fly_mode(delta):
 	
 	dir = dir.normalized()
 	
-	# Жорстко блокуємо рух, якщо кнопки не натиснуті
 	if dir == Vector3.ZERO:
 		return 
 		
@@ -97,7 +85,6 @@ func _process_walk_mode(delta, underwater):
 		if not is_on_floor():
 			velocity.y -= gravity * delta 
 		else:
-			# Скидаємо гравітацію на землі, щоб не вдавлювало в полігони
 			if velocity.y < 0.0:
 				velocity.y = -0.1 
 
@@ -115,9 +102,9 @@ func _process_walk_mode(delta, underwater):
 		velocity.x = lerp(velocity.x, direction.x * target_speed, accel * delta)
 		velocity.z = lerp(velocity.z, direction.z * target_speed, accel * delta)
 	else:
-		# ЖОРСТКИЙ СТОП, ніякого ковзання чи дрейфу
-		velocity.x = 0.0
-		velocity.z = 0.0
+		# ПРИРОДНЕ ГАЛЬМУВАННЯ. Якщо тебе штовхає вітер — капсула зрушить з місця.
+		velocity.x = lerp(velocity.x, 0.0, accel * delta * 2.0)
+		velocity.z = lerp(velocity.z, 0.0, accel * delta * 2.0)
 
 	var speed_length = Vector2(velocity.x, velocity.z).length()
 	if is_on_floor() and speed_length > 1.0 and not underwater:

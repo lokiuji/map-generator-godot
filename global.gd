@@ -4,10 +4,13 @@ const WORLD_SIZE: float = 60000.0
 var world_seed: int = 777
 var custom_spawn_x: float = -999999.0
 var custom_spawn_z: float = -999999.0
+var world_offset: Vector2 = Vector2.ZERO
 var elevation_noise = FastNoiseLite.new()
 var mountain_noise = FastNoiseLite.new()
 var moisture_noise = FastNoiseLite.new()
 var continents = [] 
+var continent_noise = FastNoiseLite.new()
+var chunk_modifications = {}
 
 func _ready():
 	_setup_noises()
@@ -17,6 +20,18 @@ func set_seed(new_seed: int):
 	world_seed = new_seed
 	_setup_noises()
 	_generate_continent_layout()
+
+func _get_seamless_noise(noise: FastNoiseLite, x: float, z: float) -> float:
+	# Перетворюємо плоску вісь X на коло (Схід та Захід зшиваються разом)
+	var angle_x = (x / WORLD_SIZE) * TAU # TAU - це 2 * PI
+	var radius = WORLD_SIZE / TAU
+	
+	# Конвертуємо полярні координати в декартові для 3D простору
+	var nx = cos(angle_x) * radius
+	var ny = sin(angle_x) * radius
+	
+	# Читаємо 3D шум. nx та ny відповідають за довготу, а z - за широту
+	return noise.get_noise_3d(nx, ny, z)
 
 func _setup_noises():
 	elevation_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
@@ -34,6 +49,28 @@ func _setup_noises():
 	moisture_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	moisture_noise.seed = world_seed + 999
 	moisture_noise.frequency = 0.0005
+	elevation_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	elevation_noise.seed = world_seed
+	elevation_noise.frequency = 0.00045 
+	elevation_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	elevation_noise.fractal_octaves = 5
+	
+	mountain_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	mountain_noise.seed = world_seed + 333
+	mountain_noise.frequency = 0.002
+	mountain_noise.fractal_type = FastNoiseLite.FRACTAL_RIDGED
+	mountain_noise.fractal_octaves = 5
+
+	moisture_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	moisture_noise.seed = world_seed + 999
+	moisture_noise.frequency = 0.0005
+
+	# НОВИЙ ШУМ ДЛЯ КОНТИНЕНТІВ (як у відео)
+	continent_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	continent_noise.seed = world_seed + 123
+	continent_noise.frequency = 0.000015 # Дуже низька частота створює величезні материки
+	continent_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	continent_noise.fractal_octaves = 4
 
 func _generate_continent_layout():
 	continents.clear()
@@ -41,41 +78,70 @@ func _generate_continent_layout():
 	rng.seed = world_seed
 	var attempts = 0
 	
-	while continents.size() < 7 and attempts < 200:
+	# Збільшуємо кількість спроб до 1500, щоб генератор точно знайшов місце для всіх 7
+	while continents.size() < 7 and attempts < 1500:
 		attempts += 1
-		var margin = 8000.0
-		# ВИПРАВЛЕННЯ ДРЕЙФУ: Центруємо світ навколо нульових координат!
 		var pos = Vector2(
-			rng.randf_range(-WORLD_SIZE/2.0 + margin, WORLD_SIZE/2.0 - margin),
-			rng.randf_range(-WORLD_SIZE/2.0 + margin, WORLD_SIZE/2.0 - margin)
+			rng.randf_range(-WORLD_SIZE/2.0, WORLD_SIZE/2.0),
+			rng.randf_range(-WORLD_SIZE/2.0, WORLD_SIZE/2.0)
 		)
-		var radius = rng.randf_range(3500.0, 7500.0)
+		
+		# Дозволяємо материкам спавнитися трохи ближче до полюсів (0.4 замість 0.35)
+		if abs(pos.y) > WORLD_SIZE * 0.4: 
+			continue
+			
+		# Робимо базові радіуси трохи компактнішими, щоб вони влізли на мапу
+		var radius = rng.randf_range(5000.0, 9000.0) 
 		var too_close = false
+		
 		for c in continents:
-			if pos.distance_to(c.pos) < (radius + c.radius + 6000.0):
+			# Зменшуємо жорсткий буфер між материками з 4000 до 1500 км
+			# (Завдяки Domain Warping вони все одно не будуть виглядати злиплими)
+			if _get_wrapped_distance(pos, c.pos) < (radius + c.radius + 1500.0):
 				too_close = true
 				break
+				
 		if not too_close: continents.append({"pos": pos, "radius": radius})
 
 func get_falloff(world_x: float, world_z: float) -> float:
-	var warp_x = elevation_noise.get_noise_2d(world_x * 0.5, world_z * 0.5) * 800.0
-	var warp_z = elevation_noise.get_noise_2d(world_z * 0.5, world_x * 0.5) * 800.0
+	# 1. СПОТВОРЕННЯ КООРДИНАТ
+	# Зменшуємо силу розриву з 18000 до 12000, щоб материки залишалися масивними
+	var warp_strength = 12000.0 
+	var warp_x = _get_seamless_noise(continent_noise, world_x, world_z) * warp_strength
+	var warp_z = _get_seamless_noise(continent_noise, world_z + 5000.0, world_x - 5000.0) * warp_strength
+	
 	var warped_pos = Vector2(world_x + warp_x, world_z + warp_z)
-	var min_falloff = 1.0
+	var min_falloff = 1.0 
+	
+	# 2. ПЕРЕВІРКА ВІДСТАНІ ДО КОНТИНЕНТІВ
 	for c in continents:
-		var dist = warped_pos.distance_to(c.pos)
+		var dist = _get_wrapped_distance(warped_pos, c.pos)
 		var t = clamp(dist / c.radius, 0.0, 1.0)
-		var f = pow(t, 3.0) / (pow(t, 3.0) + pow(2.2 - 2.2 * t, 3.0))
-		if f < min_falloff: min_falloff = f
-	return min_falloff
+		
+		# РОЗШИРЮЄМО СУХОДІЛ:
+		# Раніше було (0.4, 0.9). 
+		# Тепер берег починає спускатися аж на 65% віддаленості від центру (0.65),
+		# і повністю йде під воду лише за межами базового радіусу (1.1).
+		var f = smoothstep(0.65, 1.1, t)
+		
+		if f < min_falloff: 
+			min_falloff = f
+			
+	# 3. ДОДАЄМО КРИЖАНІ ПОЛЮСИ
+	var polar_dist = abs(world_z) / (WORLD_SIZE / 2.0)
+	# Робимо льодовики трохи меншими, щоб дати більше місця океану та землі
+	var polar_ocean = smoothstep(0.9, 1.0, polar_dist)
+	
+	return max(min_falloff, polar_ocean)
 
 func get_raw_elevation(x: float, z: float) -> float:
-	var e = (elevation_noise.get_noise_2d(x, z) + 1.0) / 2.0
+	var e = (_get_seamless_noise(elevation_noise, x, z) + 1.0) / 2.0
 	return clamp(e - get_falloff(x, z), 0.0, 1.0)
 
 func get_biome_data(x: float, z: float) -> Dictionary:
 	var e = get_raw_elevation(x, z)
-	var m = (moisture_noise.get_noise_2d(x, z) + 1.0) / 2.0
+	var m = (_get_seamless_noise(moisture_noise, x, z) + 1.0) / 2.0
+	
 	var b = "ocean"; var c = Color(0.1, 0.3, 0.6); var is_g = false
 	if e < 0.35: c = Color(0.1, 0.3, 0.6).lerp(Color(0.15, 0.45, 0.65), e / 0.35)
 	elif e < 0.38: b = "beach"; c = Color(0.76, 0.70, 0.50)
@@ -87,12 +153,36 @@ func get_biome_data(x: float, z: float) -> Dictionary:
 		if m < 0.35: b = "desert"; c = Color(0.85, 0.70, 0.50)
 		elif m < 0.65: b = "grassland"; c = Color(0.20, 0.35, 0.15); is_g = true
 		else: b = "forest"; c = Color(0.10, 0.30, 0.05); is_g = true
+		
 	return {"elevation": e, "moisture": m, "biome": b, "color": c, "is_grassy": is_g}
 
 func _get_final_height(world_x: float, world_z: float) -> float:
 	var e = get_raw_elevation(world_x, world_z)
 	if e < 0.35: return 5.0 + (e - 0.35) * 40.0
+	
 	var land = pow(e - 0.35, 1.2) * 150.0
 	var ridge = smoothstep(0.4, 0.85, e)
-	var peaks = mountain_noise.get_noise_2d(world_x, world_z) * 180.0 
+	# Зверни увагу, тут теж застосовуємо _get_seamless_noise для гір!
+	var peaks = _get_seamless_noise(mountain_noise, world_x, world_z) * 180.0 
+	
 	return 5.0 + land + (peaks * ridge)
+
+func _get_wrapped_distance(p1: Vector2, p2: Vector2) -> float:
+	var dx = abs(p1.x - p2.x)
+	var dy = abs(p1.y - p2.y)
+	# Якщо відстань більша за половину світу — значить коротший шлях йде через "край" карти
+	if dx > WORLD_SIZE / 2.0: dx = WORLD_SIZE - dx
+	if dy > WORLD_SIZE / 2.0: dy = WORLD_SIZE - dy
+	return Vector2(dx, dy).length()
+
+func get_absolute_chunk_id(p_world_offset: Vector2, local_chunk_pos: Vector2, chunk_size: float) -> Vector2:
+	var half_world = WORLD_SIZE / 2.0
+	
+	# Справжні координати у світі (використовуємо p_world_offset)
+	var real_x = p_world_offset.x + (local_chunk_pos.x * chunk_size)
+	var real_z = p_world_offset.y + (local_chunk_pos.y * chunk_size)
+	
+	var wrapped_x = fposmod(real_x + half_world, WORLD_SIZE) - half_world
+	var wrapped_z = fposmod(real_z + half_world, WORLD_SIZE) - half_world
+	
+	return (Vector2(wrapped_x, wrapped_z) / chunk_size).round()

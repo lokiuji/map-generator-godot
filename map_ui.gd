@@ -27,10 +27,21 @@ func _generate_map_texture():
 func _process(_delta):
 	if player and visible:
 		var map_size = map_texture.size
-		# Додаємо половину розміру світу, щоб перенести діапазон з [-30000, 30000] у [0, 60000]
+		var half_world = Global.WORLD_SIZE / 2.0
+		
+		# 1. Отримуємо сирі координати (зміщення + локальна позиція)
+		var raw_x = Global.world_offset.x + player.global_position.x
+		var raw_z = Global.world_offset.y + player.global_position.z
+		
+		# 2. ЗАЦИКЛЕННЯ: використовуємо fposmod, щоб координати завжди 
+		# залишалися в межах від -30000 до 30000
+		var real_x = fposmod(raw_x + half_world, Global.WORLD_SIZE) - half_world
+		var real_z = fposmod(raw_z + half_world, Global.WORLD_SIZE) - half_world
+		
+		# 3. Переводимо в координати інтерфейсу (від 0 до map_size)
 		player_marker.position = Vector2(
-			((player.global_position.x + Global.WORLD_SIZE / 2.0) / Global.WORLD_SIZE) * map_size.x,
-			((player.global_position.z + Global.WORLD_SIZE / 2.0) / Global.WORLD_SIZE) * map_size.y
+			((real_x + half_world) / Global.WORLD_SIZE) * map_size.x,
+			((real_z + half_world) / Global.WORLD_SIZE) * map_size.y
 		)
 
 func _on_map_gui_input(event):
