@@ -29,7 +29,6 @@ func start_generation(pos: Vector2, size: float, res: int, material: Material, g
 	terrain_mesh_instance = MeshInstance3D.new()
 	terrain_mesh_instance.material_override = material
 	add_child(terrain_mesh_instance)
-	
 	task_id = WorkerThreadPool.add_task(_build_terrain_data_in_thread, true)
 
 func set_lod(new_res: int, use_grass: bool, g_mesh: Mesh):
@@ -41,9 +40,8 @@ func set_lod(new_res: int, use_grass: bool, g_mesh: Mesh):
 
 func _process(_delta):
 	if player_ref and is_ready:
-		# РАХУЄМО ТІЛЬКИ 2D-ВІДСТАНЬ, ігноруючи висоту гір
 		var p_pos_2d = Vector2(player_ref.global_position.x, player_ref.global_position.z)
-		var c_pos_2d = Vector2(chunk_pos.x * chunk_size + chunk_size/2.0, chunk_pos.y * chunk_size + chunk_size/2.0)
+		var c_pos_2d = Vector2(global_position.x + chunk_size/2.0, global_position.z + chunk_size/2.0)
 		if mmi: mmi.visible = p_pos_2d.distance_to(c_pos_2d) < 180.0
 
 func _get_normal(world_x: float, world_z: float) -> Vector3:
@@ -71,8 +69,16 @@ func _build_terrain_data_in_thread():
 			call_deferred("_on_thread_finished", {})
 			return
 		for x in range(resolution + 1):
-			var wx = offset_x + x * step
-			var wz = offset_z + z * step
+			var local_x = x * step
+			var local_z = z * step
+			
+			# ВИПРАВЛЕННЯ ЩІЛИН: Перекриття (Overlap). Масштабуємо чанк на 1% від центру.
+			var center = chunk_size / 2.0
+			local_x = (local_x - center) * 1.01 + center
+			local_z = (local_z - center) * 1.01 + center
+			
+			var wx = offset_x + local_x
+			var wz = offset_z + local_z
 			var py = Global._get_final_height(wx, wz)
 			var b_data = Global.get_biome_data(wx, wz)
 			
@@ -81,27 +87,19 @@ func _build_terrain_data_in_thread():
 			col.a = smoothstep(100.0, 130.0, py) 
 			st.set_color(col)
 			st.set_uv(Vector2(float(x)/resolution, float(z)/resolution))
-			st.add_vertex(Vector3(x * step, py, z * step))
+			st.add_vertex(Vector3(local_x, py, local_z))
 			if py < 4.9: needs_water = true
 			
-			if grass_mesh != null and x < resolution and z < resolution and py > 5.5 and b_data["is_grassy"]:
-				var cell_n = _get_normal(wx + step/2.0, wz + step/2.0)
-				if cell_n.dot(Vector3.UP) > 0.75:
-					var h00 = py
-					var h10 = Global._get_final_height(wx + step, wz)
-					var h01 = Global._get_final_height(wx, wz + step)
-					var h11 = Global._get_final_height(wx + step, wz + step)
-					
-					for i in range(8):
-						var u = rng.randf()
-						var v = rng.randf()
-						var exact_y = 0.0
-						if u + v <= 1.0: exact_y = h00 + (h10 - h00) * u + (h01 - h00) * v
-						else: exact_y = h11 + (h01 - h11) * (1.0 - u) + (h10 - h11) * (1.0 - v)
-						
-						var g_pos = Vector3(x * step + (u * step), exact_y - 0.1, z * step + (v * step))
-						var g_basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.5, rng.randf_range(0.8, 1.2), 1.5))
-						grass_transforms.append(Transform3D(g_basis, g_pos))
+			# ВИПРАВЛЕННЯ ТРАВИ: Беремо ТОЧНУ висоту, щоб вона не ховалась під землю
+			if grass_mesh != null and py > 4.5 and b_data["is_grassy"]:
+				if _get_normal(wx, wz).dot(Vector3.UP) > 0.6:
+					var u = rng.randf(); var v = rng.randf()
+					var exact_wx = offset_x + local_x + (u * step * 0.5)
+					var exact_wz = offset_z + local_z + (v * step * 0.5)
+					var exact_y = Global._get_final_height(exact_wx, exact_wz)
+					var g_pos = Vector3(exact_wx - offset_x, exact_y - 0.1, exact_wz - offset_z)
+					var g_basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.5, rng.randf_range(0.8, 1.2), 1.5))
+					grass_transforms.append(Transform3D(g_basis, g_pos))
 
 	for z in range(resolution):
 		for x in range(resolution):
@@ -110,8 +108,6 @@ func _build_terrain_data_in_thread():
 			st.add_index(i + 1); st.add_index(i + resolution + 2); st.add_index(i + resolution + 1)
 	
 	var final_mesh = st.commit()
-	
-	# ВИПРАВЛЕННЯ: Генеруємо колізію ЗАВЖДИ, незалежно від якості чанку!
 	var col_shape = ConcavePolygonShape3D.new()
 	col_shape.set_faces(final_mesh.get_faces())
 	
@@ -124,10 +120,14 @@ func _build_terrain_data_in_thread():
 				call_deferred("_on_thread_finished", {})
 				return
 			for wx in range(11):
-				var depth = Global._get_final_height(offset_x + wx*(chunk_size/10.0), offset_z + wz*(chunk_size/10.0))
+				var local_wx = wx * (chunk_size/10.0)
+				var local_wz = wz * (chunk_size/10.0)
+				local_wx = (local_wx - chunk_size/2.0) * 1.01 + chunk_size/2.0
+				local_wz = (local_wz - chunk_size/2.0) * 1.01 + chunk_size/2.0
+				var depth = Global._get_final_height(offset_x + local_wx, offset_z + local_wz)
 				w_st.set_color(Color(smoothstep(5.0, -10.0, depth), 0, 0))
 				w_st.set_uv(Vector2(float(wx) / 10.0, float(wz) / 10.0))
-				w_st.add_vertex(Vector3(wx*(chunk_size/10.0), 4.8, wz*(chunk_size/10.0)))
+				w_st.add_vertex(Vector3(local_wx, 4.8, local_wz))
 		for wz in range(10):
 			for wx in range(10):
 				var w_i = wx + wz * 11
@@ -149,7 +149,6 @@ func _on_thread_finished(data: Dictionary):
 	
 	terrain_mesh_instance.mesh = data["mesh"]
 	
-	# БЕЗПЕЧНА ЗАМІНА: Спочатку генеруємо нові об'єкти
 	var new_s_body = null
 	if data.get("shape"):
 		new_s_body = StaticBody3D.new()
@@ -177,12 +176,10 @@ func _on_thread_finished(data: Dictionary):
 		new_water.material_override = load("res://Materials/water_mat.tres")
 		add_child(new_water)
 		
-	# Тільки ТЕПЕР, коли нова земля під ногами, видаляємо стару!
 	if s_body_ref: s_body_ref.queue_free()
 	if mmi: mmi.queue_free()
 	if water_ref: water_ref.queue_free()
 	
-	# Оновлюємо посилання на поточні об'єкти
 	s_body_ref = new_s_body
 	mmi = new_mmi
 	water_ref = new_water

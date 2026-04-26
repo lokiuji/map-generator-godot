@@ -16,7 +16,7 @@ var target_spawn_pos = Vector3.ZERO
 var procedural_grass_mesh: Mesh
 
 var chunks_building: int = 0
-const MAX_CONCURRENT_CHUNKS = 8 # Збільшено, щоб чанки не змушували чекати
+const MAX_CONCURRENT_CHUNKS = 8 
 var frame_counter = 0
 
 func _ready():
@@ -25,47 +25,49 @@ func _ready():
 		player.set_physics_process(false)
 		target_spawn_pos = _find_valid_spawn_point()
 		player.global_position = target_spawn_pos 
-		current_player_chunk = Vector2(floor(target_spawn_pos.x / CHUNK_SIZE), floor(target_spawn_pos.z / CHUNK_SIZE))
+		current_player_chunk = (Vector2(target_spawn_pos.x, target_spawn_pos.z) / CHUNK_SIZE).floor()
 		update_chunks()
 
 func _find_valid_spawn_point() -> Vector3:
 	var rng = RandomNumberGenerator.new()
 	rng.seed = Global.world_seed 
-	var start_pos = Vector2(Global.WORLD_SIZE/2, Global.WORLD_SIZE/2)
+	var start_pos = Vector2.ZERO
 	if Global.continents.size() > 0: start_pos = Global.continents[0].pos
 	for i in range(200):
-		var rx = start_pos.x + rng.randf_range(-2000, 2000)
-		var rz = start_pos.y + rng.randf_range(-2000, 2000)
+		var rx = start_pos.x + rng.randf_range(-1500, 1500)
+		var rz = start_pos.y + rng.randf_range(-1500, 1500)
 		if Global.get_raw_elevation(rx, rz) > 0.5: 
 			return Vector3(rx, 800.0, rz)
 	return Vector3(start_pos.x, 800.0, start_pos.y)
 
 func _process(_delta):
 	if not is_world_loading and player:
-		var p_pos = Vector2(player.global_position.x / CHUNK_SIZE, player.global_position.z / CHUNK_SIZE)
-		var new_chunk = p_pos.floor()
+		var new_chunk = (Vector2(player.global_position.x, player.global_position.z) / CHUNK_SIZE).floor()
 		if new_chunk != current_player_chunk:
 			current_player_chunk = new_chunk
 			update_chunks()
-			
-		# ВИПРАВЛЕННЯ: Постійна перевірка LOD, навіть коли гравець стоїть
 		_check_lods_continuously()
 
+	# ВИПРАВЛЕННЯ LOD: Спочатку покращуємо чанки ПІД гравцем, потім будуємо далекі!
 	if chunks_building < MAX_CONCURRENT_CHUNKS:
-		if chunk_spawn_queue.size() > 0:
+		if lod_update_queue.size() > 0 and lod_update_queue[0].chunk_pos.distance_to(current_player_chunk) <= 4.0:
+			var c = lod_update_queue.pop_front()
+			if is_instance_valid(c) and c.is_ready:
+				chunks_building += 1
+				var lod = get_lod_for_distance(c.chunk_pos.distance_to(current_player_chunk))
+				c.set_lod(lod["res"], lod["grass"], procedural_grass_mesh)
+		elif chunk_spawn_queue.size() > 0:
 			spawn_chunk(chunk_spawn_queue.pop_front())
 		elif lod_update_queue.size() > 0:
 			var c = lod_update_queue.pop_front()
 			if is_instance_valid(c) and c.is_ready:
-				var dist = c.chunk_pos.distance_to(current_player_chunk)
-				var lod = get_lod_for_distance(dist)
-				if c.resolution != lod["res"]:
-					chunks_building += 1
-					c.set_lod(lod["res"], lod["grass"], procedural_grass_mesh)
+				chunks_building += 1
+				var lod = get_lod_for_distance(c.chunk_pos.distance_to(current_player_chunk))
+				c.set_lod(lod["res"], lod["grass"], procedural_grass_mesh)
 
 func _check_lods_continuously():
 	frame_counter += 1
-	if frame_counter % 15 != 0: return # Перевіряємо не кожен кадр, щоб економити CPU
+	if frame_counter % 10 != 0: return 
 	for p in active_chunks.keys():
 		var chunk = active_chunks[p]
 		if not is_instance_valid(chunk) or not chunk.is_ready: continue
@@ -76,20 +78,17 @@ func _check_lods_continuously():
 	lod_update_queue.sort_custom(func(a, b): return a.chunk_pos.distance_to(current_player_chunk) < b.chunk_pos.distance_to(current_player_chunk))
 
 func get_lod_for_distance(dist: float) -> Dictionary:
-	# Якість 25 зробить землю дуже плавною і детальною (крок полігону 2 метри)
-	if dist <= 4.0: return {"res": 25, "grass": true}  
-	if dist <= 8.0: return {"res": 10, "grass": false} 
+	if dist <= 3.0: return {"res": 25, "grass": true}  
+	if dist <= 7.0: return {"res": 10, "grass": false} 
 	return {"res": 5, "grass": false}                  
 
 func update_chunks():
 	if not player: return
-	var center_chunk = current_player_chunk
 	var desired = []
 	for x in range(-RENDER_DISTANCE, RENDER_DISTANCE + 1):
 		for z in range(-RENDER_DISTANCE, RENDER_DISTANCE + 1):
-			var chunk_p = center_chunk + Vector2(x, z)
-			if chunk_p.distance_to(center_chunk) <= RENDER_DISTANCE:
-				desired.append(chunk_p)
+			var chunk_p = current_player_chunk + Vector2(x, z)
+			if chunk_p.distance_to(current_player_chunk) <= RENDER_DISTANCE: desired.append(chunk_p)
 	
 	for p in active_chunks.keys():
 		if not desired.has(p):
@@ -101,10 +100,8 @@ func update_chunks():
 			lod_update_queue.erase(chunk)
 			
 	for p in desired:
-		if not active_chunks.has(p) and not chunk_spawn_queue.has(p): 
-			chunk_spawn_queue.append(p)
-	
-	chunk_spawn_queue.sort_custom(func(a, b): return a.distance_to(center_chunk) < b.distance_to(center_chunk))
+		if not active_chunks.has(p) and not chunk_spawn_queue.has(p): chunk_spawn_queue.append(p)
+	chunk_spawn_queue.sort_custom(func(a, b): return a.distance_to(current_player_chunk) < b.distance_to(current_player_chunk))
 
 func spawn_chunk(p: Vector2):
 	chunks_building += 1
@@ -114,22 +111,26 @@ func spawn_chunk(p: Vector2):
 	c.chunk_ready.connect(_on_chunk_ready)
 	add_child(c)
 	active_chunks[p] = c
-	var dist = p.distance_to(current_player_chunk)
-	var lod = get_lod_for_distance(dist)
+	var lod = get_lod_for_distance(p.distance_to(current_player_chunk))
 	var target_grass = procedural_grass_mesh if lod["grass"] else null
 	c.start_generation(p, CHUNK_SIZE, lod["res"], terrain_material, target_grass, player)
 
 func _on_chunk_ready(chunk: Node3D):
 	if chunks_building > 0: chunks_building -= 1
-	if is_world_loading:
-		if chunk.chunk_pos.distance_to(current_player_chunk) < 0.1:
-			_drop_player()
+	if is_world_loading and chunk.chunk_pos.distance_to(current_player_chunk) < 0.1:
+		_drop_player()
 
+# ВИПРАВЛЕННЯ СПАВНУ: Додано чекання на фізичний кадр
 func _drop_player():
 	is_world_loading = false
-	var sy = Global._get_final_height(player.global_position.x, player.global_position.z)
-	player.global_position.y = sy + 3.0
+	var sy = Global._get_final_height(target_spawn_pos.x, target_spawn_pos.z)
+	player.global_position = Vector3(target_spawn_pos.x, sy + 5.0, target_spawn_pos.z)
 	if player.has_method("set_velocity"): player.set_velocity(Vector3.ZERO)
+	
+	# Чекаємо мілісекунду, поки Godot збудує фізику під ногами!
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	
 	player.set_physics_process(true)
 	player.visible = true
 

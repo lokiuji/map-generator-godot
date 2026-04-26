@@ -15,7 +15,8 @@ var fly_mode = false
 
 func _ready():
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
-
+	floor_stop_on_slope = true # Забороняє гравцеві ковзати на похилих поверхнях
+	
 func _input(event):
 	if event is InputEventMouseMotion and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 		look_rot.y -= event.relative.x * 0.003
