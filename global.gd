@@ -2,9 +2,8 @@ extends Node
 
 const WORLD_SIZE: float = 60000.0 
 var world_seed: int = 777
-var custom_spawn_x: float = -1.0
-var custom_spawn_z: float = -1.0
-
+var custom_spawn_x: float = -999999.0
+var custom_spawn_z: float = -999999.0
 var elevation_noise = FastNoiseLite.new()
 var mountain_noise = FastNoiseLite.new()
 var moisture_noise = FastNoiseLite.new()

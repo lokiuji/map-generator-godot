@@ -19,6 +19,13 @@ var is_cancelled: bool = false
 
 signal chunk_ready(chunk_node)
 
+# Ця функція запобігає крашам: чекаємо завершення потоку перед видаленням
+func _exit_tree():
+	is_cancelled = true
+	if task_id != -1:
+		WorkerThreadPool.wait_for_task_completion(task_id)
+		task_id = -1
+
 func start_generation(pos: Vector2, size: float, res: int, material: Material, g_mesh: Mesh, p_player: Node3D):
 	chunk_pos = pos
 	chunk_size = size
@@ -39,10 +46,12 @@ func set_lod(new_res: int, use_grass: bool, g_mesh: Mesh):
 	task_id = WorkerThreadPool.add_task(_build_terrain_data_in_thread, true)
 
 func _process(_delta):
-	if player_ref and is_ready:
+	if player_ref and is_ready and mmi:
 		var p_pos_2d = Vector2(player_ref.global_position.x, player_ref.global_position.z)
 		var c_pos_2d = Vector2(global_position.x + chunk_size/2.0, global_position.z + chunk_size/2.0)
-		if mmi: mmi.visible = p_pos_2d.distance_to(c_pos_2d) < 180.0
+		
+		# Збільшуємо радіус видимості трави до 300 метрів, щоб вона не зникала перед очима
+		mmi.visible = p_pos_2d.distance_to(c_pos_2d) < 300.0
 
 func _get_normal(world_x: float, world_z: float) -> Vector3:
 	var d = 0.5 
@@ -65,17 +74,11 @@ func _build_terrain_data_in_thread():
 	var needs_water = false
 	
 	for z in range(resolution + 1):
-		if is_cancelled: 
-			call_deferred("_on_thread_finished", {})
-			return
+		if is_cancelled: return
+		
 		for x in range(resolution + 1):
 			var local_x = x * step
 			var local_z = z * step
-			
-			# ВИПРАВЛЕННЯ ЩІЛИН: Перекриття (Overlap). Масштабуємо чанк на 1% від центру.
-			var center = chunk_size / 2.0
-			local_x = (local_x - center) * 1.01 + center
-			local_z = (local_z - center) * 1.01 + center
 			
 			var wx = offset_x + local_x
 			var wz = offset_z + local_z
@@ -90,10 +93,10 @@ func _build_terrain_data_in_thread():
 			st.add_vertex(Vector3(local_x, py, local_z))
 			if py < 4.9: needs_water = true
 			
-			# ВИПРАВЛЕННЯ ТРАВИ: Беремо ТОЧНУ висоту, щоб вона не ховалась під землю
 			if grass_mesh != null and py > 4.5 and b_data["is_grassy"]:
 				if _get_normal(wx, wz).dot(Vector3.UP) > 0.6:
-					var u = rng.randf(); var v = rng.randf()
+					var u = rng.randf()
+					var v = rng.randf()
 					var exact_wx = offset_x + local_x + (u * step * 0.5)
 					var exact_wz = offset_z + local_z + (v * step * 0.5)
 					var exact_y = Global._get_final_height(exact_wx, exact_wz)
@@ -104,8 +107,12 @@ func _build_terrain_data_in_thread():
 	for z in range(resolution):
 		for x in range(resolution):
 			var i = x + z * (resolution + 1)
-			st.add_index(i); st.add_index(i + 1); st.add_index(i + resolution + 1)
-			st.add_index(i + 1); st.add_index(i + resolution + 2); st.add_index(i + resolution + 1)
+			st.add_index(i)
+			st.add_index(i + 1)
+			st.add_index(i + resolution + 1)
+			st.add_index(i + 1)
+			st.add_index(i + resolution + 2)
+			st.add_index(i + resolution + 1)
 	
 	var final_mesh = st.commit()
 	var col_shape = ConcavePolygonShape3D.new()
@@ -116,14 +123,10 @@ func _build_terrain_data_in_thread():
 		var w_st = SurfaceTool.new()
 		w_st.begin(Mesh.PRIMITIVE_TRIANGLES)
 		for wz in range(11):
-			if is_cancelled: 
-				call_deferred("_on_thread_finished", {})
-				return
+			if is_cancelled: return
 			for wx in range(11):
 				var local_wx = wx * (chunk_size/10.0)
 				var local_wz = wz * (chunk_size/10.0)
-				local_wx = (local_wx - chunk_size/2.0) * 1.01 + chunk_size/2.0
-				local_wz = (local_wz - chunk_size/2.0) * 1.01 + chunk_size/2.0
 				var depth = Global._get_final_height(offset_x + local_wx, offset_z + local_wz)
 				w_st.set_color(Color(smoothstep(5.0, -10.0, depth), 0, 0))
 				w_st.set_uv(Vector2(float(wx) / 10.0, float(wz) / 10.0))
@@ -131,20 +134,27 @@ func _build_terrain_data_in_thread():
 		for wz in range(10):
 			for wx in range(10):
 				var w_i = wx + wz * 11
-				w_st.add_index(w_i); w_st.add_index(w_i + 1); w_st.add_index(w_i + 11)
-				w_st.add_index(w_i + 1); w_st.add_index(w_i + 12); w_st.add_index(w_i + 11)
-		w_st.generate_normals(); w_st.generate_tangents()
+				w_st.add_index(w_i)
+				w_st.add_index(w_i + 1)
+				w_st.add_index(w_i + 11)
+				w_st.add_index(w_i + 1)
+				w_st.add_index(w_i + 12)
+				w_st.add_index(w_i + 11)
+		w_st.generate_normals()
+		w_st.generate_tangents()
 		water_data = w_st.commit()
 
+	# КРИТИЧНИЙ РЯДОК: Повертаємо геометрію в гру
 	call_deferred("_on_thread_finished", {"mesh": final_mesh, "shape": col_shape, "grass": grass_transforms, "water": water_data})
 
 func _on_thread_finished(data: Dictionary):
 	if task_id != -1: 
 		WorkerThreadPool.wait_for_task_completion(task_id)
 		task_id = -1
+		
 	if is_cancelled:
-		queue_free()
 		return
+		
 	if data.is_empty(): return
 	
 	terrain_mesh_instance.mesh = data["mesh"]
@@ -190,3 +200,4 @@ func _on_thread_finished(data: Dictionary):
 func cancel_and_free():
 	is_cancelled = true
 	hide()
+	queue_free()

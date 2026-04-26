@@ -29,6 +29,11 @@ func _ready():
 		update_chunks()
 
 func _find_valid_spawn_point() -> Vector3:
+	# ЯКЩО МИ КЛІКНУЛИ ПО КАРТІ В ГОЛОВНОМУ МЕНЮ:
+	if Global.custom_spawn_x != -999999.0:
+		return Vector3(Global.custom_spawn_x, 800.0, Global.custom_spawn_z)
+
+	# ІНАКШЕ ШУКАЄМО РАНДОМНУ СТАРТОВУ ТОЧКУ:
 	var rng = RandomNumberGenerator.new()
 	rng.seed = Global.world_seed 
 	var start_pos = Vector2.ZERO
@@ -49,21 +54,28 @@ func _process(_delta):
 		_check_lods_continuously()
 
 	# ВИПРАВЛЕННЯ LOD: Спочатку покращуємо чанки ПІД гравцем, потім будуємо далекі!
+	# ВИПРАВЛЕННЯ LOD: Спочатку покращуємо чанки ПІД гравцем, потім будуємо далекі!
 	if chunks_building < MAX_CONCURRENT_CHUNKS:
 		if lod_update_queue.size() > 0 and lod_update_queue[0].chunk_pos.distance_to(current_player_chunk) <= 4.0:
 			var c = lod_update_queue.pop_front()
 			if is_instance_valid(c) and c.is_ready:
-				chunks_building += 1
 				var lod = get_lod_for_distance(c.chunk_pos.distance_to(current_player_chunk))
-				c.set_lod(lod["res"], lod["grass"], procedural_grass_mesh)
+				# КРИТИЧНЕ ВИПРАВЛЕННЯ: Починаємо генерацію ТІЛЬКИ якщо LOD дійсно змінився
+				if c.resolution != lod["res"]:
+					chunks_building += 1
+					c.set_lod(lod["res"], lod["grass"], procedural_grass_mesh)
+					
 		elif chunk_spawn_queue.size() > 0:
 			spawn_chunk(chunk_spawn_queue.pop_front())
+			
 		elif lod_update_queue.size() > 0:
 			var c = lod_update_queue.pop_front()
 			if is_instance_valid(c) and c.is_ready:
-				chunks_building += 1
 				var lod = get_lod_for_distance(c.chunk_pos.distance_to(current_player_chunk))
-				c.set_lod(lod["res"], lod["grass"], procedural_grass_mesh)
+				# КРИТИЧНЕ ВИПРАВЛЕННЯ
+				if c.resolution != lod["res"]:
+					chunks_building += 1
+					c.set_lod(lod["res"], lod["grass"], procedural_grass_mesh)
 
 func _check_lods_continuously():
 	frame_counter += 1
@@ -78,9 +90,12 @@ func _check_lods_continuously():
 	lod_update_queue.sort_custom(func(a, b): return a.chunk_pos.distance_to(current_player_chunk) < b.chunk_pos.distance_to(current_player_chunk))
 
 func get_lod_for_distance(dist: float) -> Dictionary:
-	if dist <= 3.0: return {"res": 25, "grass": true}  
-	if dist <= 7.0: return {"res": 10, "grass": false} 
-	return {"res": 5, "grass": false}                  
+	# Трава тепер активна на двох рівнях деталізації (близькому та середньому)
+	if dist <= 3.5: 
+		return {"res": 50, "grass": true}  
+	if dist <= 6.0: 
+		return {"res": 25, "grass": true} 
+	return {"res": 12, "grass": false}         
 
 func update_chunks():
 	if not player: return
@@ -124,10 +139,11 @@ func _on_chunk_ready(chunk: Node3D):
 func _drop_player():
 	is_world_loading = false
 	var sy = Global._get_final_height(target_spawn_pos.x, target_spawn_pos.z)
-	player.global_position = Vector3(target_spawn_pos.x, sy + 5.0, target_spawn_pos.z)
-	if player.has_method("set_velocity"): player.set_velocity(Vector3.ZERO)
 	
-	# Чекаємо мілісекунду, поки Godot збудує фізику під ногами!
+	# Зменшено висоту падіння при спавні до 2 метрів
+	player.global_position = Vector3(target_spawn_pos.x, sy + 2.0, target_spawn_pos.z)
+	player.velocity = Vector3.ZERO
+	
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	

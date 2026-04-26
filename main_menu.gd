@@ -22,7 +22,9 @@ func _generate_random_seed():
 func _update_seed_and_map(new_seed: int):
 	Global.set_seed(new_seed)
 	seed_input.text = str(new_seed)
-	Global.custom_spawn_x = -1.0
+	# Скидаємо на наші нові маркери-запобіжники
+	Global.custom_spawn_x = -999999.0
+	Global.custom_spawn_z = -999999.0
 	if marker_rect:
 		marker_rect.queue_free()
 		marker_rect = null
@@ -45,8 +47,9 @@ func _on_map_gui_input(event: InputEvent):
 			var px = img_x / s
 			var py = img_y / s
 			
-			Global.custom_spawn_x = px * Global.WORLD_SIZE
-			Global.custom_spawn_z = py * Global.WORLD_SIZE
+			# ВИПРАВЛЕНО: Зсуваємо клік у діапазон від -30000 до 30000
+			Global.custom_spawn_x = (px * Global.WORLD_SIZE) - (Global.WORLD_SIZE / 2.0)
+			Global.custom_spawn_z = (py * Global.WORLD_SIZE) - (Global.WORLD_SIZE / 2.0)
 			
 			if not marker_rect:
 				marker_rect = ColorRect.new()
@@ -57,18 +60,18 @@ func _on_map_gui_input(event: InputEvent):
 			marker_rect.position = event.position - marker_rect.size / 2.0
 
 func _draw_preview():
-	var map_res = 150 # Роздільна здатність карти (можна збільшити для деталізації)
+	var map_res = 150 
 	var img = Image.create(map_res, map_res, false, Image.FORMAT_RGB8)
 	
 	for x in range(map_res):
 		for y in range(map_res):
-			var world_x = (float(x) / map_res) * Global.WORLD_SIZE
-			var world_z = (float(y) / map_res) * Global.WORLD_SIZE
+			# ВИПРАВЛЕНО: Зсуваємо рендер пікселів, щоб вони відповідали центру
+			var world_x = (float(x) / map_res) * Global.WORLD_SIZE - (Global.WORLD_SIZE / 2.0)
+			var world_z = (float(y) / map_res) * Global.WORLD_SIZE - (Global.WORLD_SIZE / 2.0)
 			
 			var b_data = Global.get_biome_data(world_x, world_z)
 			var col = b_data["color"]
 			
-			# Додаємо тіні гір на карті
 			var e = b_data["elevation"]
 			if e > 0.15: col = col.darkened((1.0 - e) * 0.5)
 				

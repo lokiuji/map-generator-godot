@@ -30,9 +30,9 @@ func _input(event):
 			get_tree().quit()
 		if event.keycode == KEY_F:
 			fly_mode = !fly_mode
-			# ВИПРАВЛЕННЯ: Безпечне перемикання фізики
 			collision.set_deferred("disabled", fly_mode)
-			
+			# КРИТИЧНО: Повністю зупиняємо гравця при вході/виході з польоту
+			velocity = Vector3.ZERO
 			if not fly_mode:
 				# Коли вимикаємо політ, скидаємо інерцію падіння, 
 				# щоб не пробити землю на величезній швидкості
@@ -40,10 +40,24 @@ func _input(event):
 
 func _physics_process(delta):
 	var underwater = camera.global_position.y < water_level
+	
 	if fly_mode:
 		_process_fly_mode(delta)
+		# У режимі польоту фізика повністю ігнорується
 	else:
 		_process_walk_mode(delta, underwater)
+		
+		# ПЕРЕМАГАЄМО ДРЕЙФ:
+		# Викликаємо рух тільки якщо є ввід АБО гравець у повітрі.
+		# Якщо гравець стоїть і натисків немає — move_and_slide НЕ викликається, 
+		# тому рушій не зможе «штовхати» нас через помилки точності.
+		var horizontal_velocity = Vector2(velocity.x, velocity.z).length()
+		if horizontal_velocity > 0.05 or not is_on_floor():
+			move_and_slide()
+		else:
+			# Жорстка фіксація на місці
+			velocity.x = 0
+			velocity.z = 0
 
 func _process_fly_mode(delta):
 	var fly_speed = 80.0
@@ -60,6 +74,11 @@ func _process_fly_mode(delta):
 	if Input.is_physical_key_pressed(KEY_Q): dir -= Vector3.UP
 	
 	dir = dir.normalized()
+	
+	# Жорстко блокуємо рух, якщо кнопки не натиснуті
+	if dir == Vector3.ZERO:
+		return 
+		
 	global_position += dir * fly_speed * delta
 
 func _process_walk_mode(delta, underwater):
@@ -76,10 +95,13 @@ func _process_walk_mode(delta, underwater):
 			velocity.y += 12.0 * delta
 	else:
 		if not is_on_floor():
-			# ПАДАЄМО ШВИДКО (Нова гравітація)
 			velocity.y -= gravity * delta 
+		else:
+			# Скидаємо гравітацію на землі, щоб не вдавлювало в полігони
+			if velocity.y < 0.0:
+				velocity.y = -0.1 
+
 		if Input.is_physical_key_pressed(KEY_SPACE) and is_on_floor():
-			# Оскільки гравітація сильна, стрибок має бути потужнішим
 			velocity.y = 14.0 
 
 	var direction = (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
@@ -93,9 +115,9 @@ func _process_walk_mode(delta, underwater):
 		velocity.x = lerp(velocity.x, direction.x * target_speed, accel * delta)
 		velocity.z = lerp(velocity.z, direction.z * target_speed, accel * delta)
 	else:
-		# МАГІЯ ЖОРСТКОЇ ЗУПИНКИ (світ більше не плаватиме)
-		velocity.x = move_toward(velocity.x, 0, SPEED)
-		velocity.z = move_toward(velocity.z, 0, SPEED)
+		# ЖОРСТКИЙ СТОП, ніякого ковзання чи дрейфу
+		velocity.x = 0.0
+		velocity.z = 0.0
 
 	var speed_length = Vector2(velocity.x, velocity.z).length()
 	if is_on_floor() and speed_length > 1.0 and not underwater:
@@ -106,5 +128,4 @@ func _process_walk_mode(delta, underwater):
 	camera.position.y = sin(t_bob * BOB_FREQ) * BOB_AMP + 1.7
 	camera.position.x = cos(t_bob * BOB_FREQ / 2.0) * BOB_AMP * 1.5
 
-	# ЦЕЙ РЯДОК ФІЗИЧНО РУХАЄ ТЕБЕ (Без нього ти стояв на місці)
 	move_and_slide()
