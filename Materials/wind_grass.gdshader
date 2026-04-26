@@ -6,11 +6,8 @@ uniform float wind_speed = 1.5;
 uniform float wind_strength = 0.2;
 
 void vertex() {
-	// Вітер базується на світових координатах, щоб хвилі йшли по всьому полю
 	vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float wind = sin(world_pos.x * 0.5 + TIME * wind_speed) * sin(world_pos.z * 0.5 + TIME * wind_speed * 0.8);
-	
-	// Рухаємо тільки верхню частину трави (чим вище VERTEX.y, тим сильніше хитається)
 	VERTEX.x += wind * wind_strength * max(0.0, VERTEX.y);
 	VERTEX.z += wind * wind_strength * max(0.0, VERTEX.y) * 0.5;
 }
@@ -18,12 +15,14 @@ void vertex() {
 void fragment() {
 	vec4 tex = texture(albedo_texture, UV);
 	
-	// COLOR.rgb тепер містить колір біому (землі), який ми передали з world_chunk.gd
-	// Ми множимо колір текстури на колір землі. 
-	// Множник 1.4 додає яскравості, щоб трава не виглядала занадто темною.
-	vec3 final_color = tex.rgb * COLOR.rgb * 1.4;
+	// Обчислюємо чорно-білу яскравість текстури трави
+	float grayscale = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
 	
-	ALBEDO = final_color; 
+	// Змішуємо яскравість текстури з кольором біому (COLOR.rgb)
+	// Множник 2.0 повертає насиченість, щоб трава виглядала соковитою
+	vec3 final_color = grayscale * COLOR.rgb * 2.0; 
+	
+	ALBEDO = final_color;
 	ALPHA = tex.a;
 	ALPHA_SCISSOR_THRESHOLD = 0.5;
 }

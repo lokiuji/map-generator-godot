@@ -19,15 +19,23 @@ void fragment() {
 	vec3 world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float snow_mask = COLOR.a; 
 	
-	// 1. АНІМОВАНІ ХВИЛІ ВІТРУ (Точнісінько як у wind_grass.gdshader)
+	// --- ВІДСТАНЬ ДО КАМЕРИ ---
+	// dist - це дистанція від камери до поточного шматка землі.
+	float dist = distance(CAMERA_POSITION_WORLD, world_pos);
+	
+	// lod_fade буде 0.0 зблизька (шуму не видно) і плавно стане 1.0 після 200 метрів
+	float lod_fade = smoothstep(120.0, 200.0, dist);
+	
+	// --- АНІМАЦІЯ ВІТРУ ТА ЛАНДШАФТУ ---
+	// М'які хвилі вітру (без сіток і різких переходів)
 	float wind_speed = 1.5;
-	float wind = sin(world_pos.x * 0.5 + TIME * wind_speed) * sin(world_pos.z * 0.5 + TIME * wind_speed * 0.8);
+	float wind = sin(world_pos.x * 0.08 + TIME * wind_speed) * sin(world_pos.z * 0.08 + TIME * wind_speed * 0.8);
 	
-	// 2. М'яка макро-текстура, щоб земля не виглядала пластиковою
-	float ground_tex = sin(world_pos.x * 0.2) * cos(world_pos.z * 0.2);
+	// Плями ландшафту: додає природну нерівномірність (світліші/темніші ділянки поля)
+	float ground_tex = sin(world_pos.x * 0.15) * cos(world_pos.z * 0.15);
 	
-	// 3. Комбінуємо: світлі та темні плями "бігають" по землі
-	float wind_shadows = (wind * 0.05) + (ground_tex * 0.04);
+	// Комбінуємо хвилі і множимо на lod_fade (так ми приховуємо цей ефект перед камерою)
+	float wind_shadows = ((wind * 0.04) + (ground_tex * 0.03)) * lod_fade;
 	
 	// Застосовуємо цей рух ТІЛЬКИ до трав'яних біомів (маскуємо сніг)
 	vec3 biome_color = COLOR.rgb + (wind_shadows * (1.0 - snow_mask));

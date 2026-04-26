@@ -148,7 +148,7 @@ func get_biome_data(x: float, z: float) -> Dictionary:
 	elif e > 0.75: b = "snow"; c = Color(0.9, 0.95, 1.0)
 	elif e > 0.65:
 		b = "tundra" if m < 0.5 else "taiga"
-		c = Color(0.55, 0.65, 0.65) if m < 0.5 else Color(0.40, 0.50, 0.40)
+		c = Color(0.239, 0.733, 0.444, 1.0) if m < 0.5 else Color(0.40, 0.50, 0.40)
 	else:
 		if m < 0.35: b = "desert"; c = Color(0.85, 0.70, 0.50)
 		elif m < 0.65: b = "grassland"; c = Color(0.20, 0.35, 0.15); is_g = true
