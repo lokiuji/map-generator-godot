@@ -15,12 +15,26 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 biome_color = COLOR.rgb;
-	// Читаємо інформацію про сніг, яку згенерував наш шум у скрипті!
+	// Отримуємо глобальні координати пікселя
+	vec3 world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float snow_mask = COLOR.a; 
 	
+	// 1. АНІМОВАНІ ХВИЛІ ВІТРУ (Точнісінько як у wind_grass.gdshader)
+	float wind_speed = 1.5;
+	float wind = sin(world_pos.x * 0.5 + TIME * wind_speed) * sin(world_pos.z * 0.5 + TIME * wind_speed * 0.8);
+	
+	// 2. М'яка макро-текстура, щоб земля не виглядала пластиковою
+	float ground_tex = sin(world_pos.x * 0.2) * cos(world_pos.z * 0.2);
+	
+	// 3. Комбінуємо: світлі та темні плями "бігають" по землі
+	float wind_shadows = (wind * 0.05) + (ground_tex * 0.04);
+	
+	// Застосовуємо цей рух ТІЛЬКИ до трав'яних біомів (маскуємо сніг)
+	vec3 biome_color = COLOR.rgb + (wind_shadows * (1.0 - snow_mask));
+	
+	// --- Стандартний розрахунок схилів ---
 	float slope = dot(normalize(world_normal), vec3(0.0, 1.0, 0.0));
-	float steepness = 1.0 - slope; 
+	float steepness = 1.0 - slope;
 	
 	float dirt_weight = smoothstep(dirt_slope_threshold - blend_amount, dirt_slope_threshold + blend_amount, steepness);
 	float rock_weight = smoothstep(rock_slope_threshold - blend_amount, rock_slope_threshold + blend_amount, steepness);
@@ -28,7 +42,6 @@ void fragment() {
 	vec3 slope_color = mix(biome_color, dirt_color, dirt_weight);
 	slope_color = mix(slope_color, rock_color, rock_weight);
 	
-	// На дуже стрімких скелях сніг тримається гірше
 	float rock_on_snow = smoothstep(0.8, 0.95, steepness);
 	vec3 final_snow = mix(snow_color, rock_color, rock_on_snow * 0.5);
 	

@@ -17,8 +17,13 @@ void vertex() {
 
 void fragment() {
 	vec4 tex = texture(albedo_texture, UV);
-	// COLOR.rgb зберігає оригінальні кольори Quaternius!
-	ALBEDO = tex.rgb * COLOR.rgb; 
+	
+	// COLOR.rgb тепер містить колір біому (землі), який ми передали з world_chunk.gd
+	// Ми множимо колір текстури на колір землі. 
+	// Множник 1.4 додає яскравості, щоб трава не виглядала занадто темною.
+	vec3 final_color = tex.rgb * COLOR.rgb * 1.4;
+	
+	ALBEDO = final_color; 
 	ALPHA = tex.a;
 	ALPHA_SCISSOR_THRESHOLD = 0.5;
 }

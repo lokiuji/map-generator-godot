@@ -90,7 +90,6 @@ func _build_terrain_data_in_thread():
 	var rng = RandomNumberGenerator.new()
 	rng.seed = hash(str(chunk_pos) + str(chunk_world_offset))
 	
-	var grass_transforms = []
 	var needs_water = false
 	
 	for z in range(resolution + 1):
@@ -125,15 +124,22 @@ func _build_terrain_data_in_thread():
 			st.add_index(i + resolution + 2)
 			st.add_index(i + resolution + 1)
 			
+
+	# 1. НОВА ГЕНЕРАЦІЯ ТРАВИ (БЕЗВІДНОСНО LOD)
+	var grass_data = [] # Тепер ми зберігаємо не тільки позицію, а й КОЛІР
 	if grass_mesh != null:
-		var grass_density = 0.5 
+		# ЗБІЛЬШУЄМО ГУСТИНУ ТУТ: 2.0 = дуже густа трава (близько 5000 кущів на чанк)
+		var grass_density = 2.0 
 		var num_grass = int(chunk_size * chunk_size * grass_density)
+		
 		for i in range(num_grass):
 			if is_cancelled: return
-			var lx = rng.randf_range(-chunk_size/2.0, chunk_size/2.0)
-			var lz = rng.randf_range(-chunk_size/2.0, chunk_size/2.0)
-			var wx = offset_x + lx + chunk_world_offset.x
-			var wz = offset_z + lz + chunk_world_offset.y
+			
+			# Рандомна позиція по всій площі чанка
+			var lx = rng.randf_range(0.0, chunk_size)
+			var lz = rng.randf_range(0.0, chunk_size)
+			var wx = offset_x + lx
+			var wz = offset_z + lz
 			
 			var py = Global._get_final_height(wx, wz)
 			var b_data = Global.get_biome_data(wx, wz)
@@ -143,8 +149,15 @@ func _build_terrain_data_in_thread():
 				if norm.dot(Vector3.UP) > 0.6:
 					var g_pos = Vector3(lx, py - 0.1, lz)
 					var g_basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.5, rng.randf_range(0.8, 1.2), 1.5))
-					grass_transforms.append(Transform3D(g_basis, g_pos))
-	
+					
+					# Додаємо трохи варіативності в колір трави (щоб не була однотонною)
+					var color_variation = rng.randf_range(0.85, 1.15)
+					var final_grass_color = b_data["color"] * color_variation
+					
+					grass_data.append({
+						"transform": Transform3D(g_basis, g_pos), 
+						"color": final_grass_color
+					})
 	var final_mesh = st.commit()
 
 	# ГЕНЕРУЄМО КОЛІЗІЮ ТІЛЬКИ ЯКЩО ЧАНК БЛИЗЬКО!
@@ -175,9 +188,9 @@ func _build_terrain_data_in_thread():
 		w_st.generate_normals()
 		w_st.generate_tangents()
 		water_data = w_st.commit()
-
 	if not is_cancelled:
-		call_deferred("_on_thread_finished", {"mesh": final_mesh, "shape": col_shape, "grass": grass_transforms, "water": water_data})
+		# ВИПРАВЛЕНО: Було "grass": grass_transforms, стало "grass": grass_data
+		call_deferred("_on_thread_finished", {"mesh": final_mesh, "shape": col_shape, "grass": grass_data, "water": water_data})
 
 func _on_thread_finished(data: Dictionary):
 	if task_id != -1: 
@@ -198,15 +211,20 @@ func _on_thread_finished(data: Dictionary):
 		terrain_mesh_instance.add_child(new_s_body)
 		
 	var new_mmi = null
-	if grass_mesh and data["grass"].size() > 0:
+	if grass_mesh and data.has("grass") and data["grass"].size() > 0:
 		new_mmi = MultiMeshInstance3D.new()
 		var mm = MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true # Вмикаємо кольори!
 		mm.mesh = grass_mesh
 		mm.instance_count = data["grass"].size()
 		new_mmi.multimesh = mm
 		new_mmi.material_override = grass_material
-		for i in range(data["grass"].size()): mm.set_instance_transform(i, data["grass"][i])
+		
+		for i in range(data["grass"].size()): 
+			mm.set_instance_transform(i, data["grass"][i]["transform"])
+			mm.set_instance_color(i, data["grass"][i]["color"])
+			
 		add_child(new_mmi)
 		
 	var new_water = null
