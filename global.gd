@@ -11,6 +11,7 @@ var moisture_noise = FastNoiseLite.new()
 var continents = [] 
 var continent_noise = FastNoiseLite.new()
 var chunk_modifications = {}
+var rock_detail_noise = FastNoiseLite.new()
 
 func _ready():
 	_setup_noises()
@@ -34,7 +35,6 @@ func _get_seamless_noise(noise: FastNoiseLite, x: float, z: float) -> float:
 	return noise.get_noise_3d(nx, ny, z)
 
 func _setup_noises():
-	var rock_detail_noise = FastNoiseLite.new()
 	rock_detail_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	rock_detail_noise.seed = world_seed + 1234
 	rock_detail_noise.frequency = 0.05 # Висока частота для дрібних деталей
@@ -200,21 +200,25 @@ func get_biome_data(x: float, z: float) -> Dictionary:
 		else: b = "desert" if e < 0.55 else "tundra"
 
 	return {"elevation": e, "moisture": m, "biome": b, "color": c, "is_grassy": is_g}
-	
+
 func _get_final_height(world_x: float, world_z: float) -> float:
 	var e = get_raw_elevation(world_x, world_z)
 	if e < 0.35: return 5.0 + (e - 0.35) * 40.0
+	
 	var land = pow(e - 0.35, 1.2) * 150.0
 	var ridge = smoothstep(0.4, 0.85, e)
 	var peaks = _get_seamless_noise(mountain_noise, world_x, world_z) * 180.0 
+	
 	var base_height = 5.0 + land + (peaks * ridge)
-	# МАГІЯ ОБ'ЄМУ: Додаємо мікро-рельєф каменю на великих висотах/схилах
-	if e > 0.55:
-		# Використовуємо безшовний шум для деталей
-		var rock_disp = _get_seamless_noise(rock_detail_noise, world_x, world_z)
-		# Сила опуклості залежить від висоти (чим вище в гори, тим скелястіше)
-		var disp_strength = smoothstep(0.55, 0.8, e) * 4.0 
-		base_height += rock_disp * disp_strength
+	
+	# ДОДАЄМО ФІЗИЧНІ ТРІЩИНИ ТА ВИСТУПИ КАМЕНЮ
+	if e > 0.55: # Тільки там, де починаються гори
+		# Використовуємо дрібний шум для скель
+		var rock_noise_val = _get_seamless_noise(rock_detail_noise, world_x, world_z)
+		# Вдавлюємо/витягуємо поверхню (наприклад, до 5 метрів у глибину/висоту)
+		var rock_strength = smoothstep(0.55, 0.75, e) * 5.0
+		base_height += (rock_noise_val * 2.0 - 1.0) * rock_strength
+		
 	return base_height
 
 func _get_wrapped_distance(p1: Vector2, p2: Vector2) -> float:
