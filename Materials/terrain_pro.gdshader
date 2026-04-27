@@ -29,8 +29,8 @@ void fragment() {
 	// ВИПРАВЛЕНО: Множимо колір, а не додаємо. Це не дає значенням вийти за 1.0 (лайм).
 	// wind_shadows тепер буде множником від 0.93 до 1.07
 	float wind_shadows = 1.0 + (((wind * 0.04) + (ground_tex * 0.03)) * lod_fade * is_grass);
-	
-	vec3 biome_color = COLOR.rgb * wind_shadows;
+	// Обмежуємо колір, щоб він ніколи не перевищував 1.0
+	vec3 biome_color = clamp(COLOR.rgb * wind_shadows, vec3(0.0), vec3(1.0));
 	
 	float slope = dot(normalize(world_normal), vec3(0.0, 1.0, 0.0));
 	float steepness = 1.0 - slope;

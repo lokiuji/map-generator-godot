@@ -39,13 +39,15 @@ void fragment() {
 	ALPHA = tex.a;
 	ALPHA_SCISSOR_THRESHOLD = 0.5; 
 	
-	// ВИПРАВЛЕНО: (1.0 - UV.y) гарантує, що color_bottom завжди біля коріння!
-	vec3 base_color = mix(color_bottom, color_top, 1.0 - UV.y);
+	// COLOR.rgb містить точний колір біому під цим кущем трави
+	// Робимо корінь трохи темнішим (множимо на 0.5), а верхівку - оригінальним кольором
+	vec3 base_color = mix(COLOR.rgb * 0.5, COLOR.rgb, 1.0 - UV.y);
 	
-	// Вітер впливає лише на світлі верхівки
-	vec3 final_color = mix(base_color, color_wind, wind_val * (1.0 - UV.y) * 0.6);
+	// Імітуємо відблиск вітру, трохи освітлюючи верхівки (але не більше ніж на 15%)
+	vec3 final_color = mix(base_color, COLOR.rgb * 1.15, wind_val * (1.0 - UV.y) * 0.6);
 	
-	ALBEDO = final_color;
+	// Запобігаємо появі "лайму" на самій траві
+	ALBEDO = clamp(final_color, vec3(0.0), vec3(1.0));
 	
 	// ПРИБРАЛИ EMISSION! Трава більше не світиться у темряві
 	SPECULAR = 0.0; 

@@ -21,8 +21,8 @@ void fragment() {
 	vec4 tex = texture(albedo_texture, UV);
 	float brightness = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
 	
-	// Безпечний діапазон (0.8 - 1.1), який не перетворить траву на пересвічений лайм
-	vec3 tip_color = mix(COLOR.rgb * 0.8, COLOR.rgb * 1.1, brightness);
+	// Зменшено множник з 1.1 до 1.0, щоб прибрати лаймові артефакти
+	vec3 tip_color = mix(COLOR.rgb * 0.8, COLOR.rgb * 1.0, brightness);
 	
 	// Самий корінь (UV.y = 1.0) буде 100% чистим кольором землі.
 	vec3 final_color = mix(tip_color, COLOR.rgb, UV.y);
