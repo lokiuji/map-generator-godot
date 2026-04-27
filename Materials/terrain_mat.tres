@@ -5,3 +5,14 @@
 [resource]
 render_priority = 0
 shader = ExtResource("1_opkci")
+shader_parameter/rock_color_dark = Color(0.05, 0.05, 0.07, 1)
+shader_parameter/rock_color_light = Color(0.38, 0.4, 0.42, 1)
+shader_parameter/rock_macro_scale = 0.09
+shader_parameter/macro_crack_depth = 1.0
+shader_parameter/rock_micro_scale = 0.5
+shader_parameter/micro_crack_depth = 0.1
+shader_parameter/dirt_color = Color(0.4, 0.25, 0.15, 1)
+shader_parameter/snow_color = Color(0.9, 0.95, 1, 1)
+shader_parameter/dirt_slope_threshold = 0.35
+shader_parameter/rock_slope_threshold = 0.3
+shader_parameter/blend_amount = 0.08

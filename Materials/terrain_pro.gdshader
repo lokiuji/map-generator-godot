@@ -1,8 +1,15 @@
 shader_type spatial;
 
-uniform vec3 rock_color_dark : source_color = vec3(0.22, 0.22, 0.25); // Зробив трохи світлішим, щоб не було чорним як лава
-uniform vec3 rock_color_light : source_color = vec3(0.40, 0.42, 0.45); 
-uniform float rock_scale = 0.5; 
+uniform vec3 rock_color_dark : source_color = vec3(0.05, 0.05, 0.07); 
+uniform vec3 rock_color_light : source_color = vec3(0.38, 0.40, 0.42); 
+
+// 1. МАКРО ТРІЩИНИ (Величезні кам'яні масиви)
+uniform float rock_macro_scale = 0.05;  
+uniform float macro_crack_depth = 4.0;  
+
+// 2. МІКРО ТРІЩИНИ (Окремі камені та потріскана земля)
+uniform float rock_micro_scale = 0.4;   
+uniform float micro_crack_depth = 1.0;  
 
 uniform vec3 dirt_color : source_color = vec3(0.40, 0.25, 0.15);
 uniform vec3 snow_color : source_color = vec3(0.9, 0.95, 1.0);
@@ -13,27 +20,22 @@ uniform float blend_amount = 0.08;
 
 varying vec3 world_normal;
 varying vec3 world_pos_var;
+varying float v_rock_weight;
 
-// --- ГЕНЕРАТОРИ 2D ШУМУ (для трави) ---
-float hash(vec2 p) {
-	p = fract(p * vec2(233.14, 113.16));
-	p += dot(p, p + 19.19);
-	return fract(p.x * p.y);
-}
-
-float noise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
-			   mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
-}
-
-// --- ГЕНЕРАТОРИ 3D ШУМУ (для каменю) ---
+// --- БАЗОВІ ГЕНЕРАТОРИ ---
 float hash3(vec3 p) {
 	p = fract(p * vec3(123.34, 456.21, 789.92));
 	p += dot(p, p + 45.32);
 	return fract(p.x * p.y * p.z);
+}
+
+vec3 hash3v(vec3 p) {
+	vec3 q = vec3(
+		dot(p, vec3(127.1, 311.7, 74.7)),
+		dot(p, vec3(269.5, 183.3, 246.1)),
+		dot(p, vec3(113.5, 271.9, 124.6))
+	);
+	return fract(sin(q) * 43758.5453123);
 }
 
 float noise3(vec3 x) {
@@ -46,158 +48,138 @@ float noise3(vec3 x) {
 				   mix(hash3(i + vec3(0,1,1)), hash3(i + vec3(1,1,1)), f.x), f.y), f.z);
 }
 
+// --- ВОРОНИЙ ДЛЯ ТРІЩИН ---
+float voronoi_edge(vec3 x) {
+	vec3 p = floor(x);
+	vec3 f = fract(x);
+	vec3 mb; vec3 mr;
+	float md = 8.0;
+	
+	for(int k=-1; k<=1; k++)
+	for(int j=-1; j<=1; j++)
+	for(int i=-1; i<=1; i++) {
+		vec3 b = vec3(float(i), float(j), float(k));
+		vec3 r = b + hash3v(p + b) - f;
+		float d = dot(r, r);
+		if(d < md) { md = d; mr = r; mb = b; }
+	}
+	
+	md = 8.0;
+	for(int k=-1; k<=1; k++)
+	for(int j=-1; j<=1; j++)
+	for(int i=-1; i<=1; i++) {
+		vec3 b = vec3(float(i), float(j), float(k));
+		vec3 r = b + hash3v(p + b) - f;
+		if(dot(r - mr, r - mr) > 0.00001) {
+			md = min(md, dot(0.5 * (mr + r), normalize(r - mr)));
+		}
+	}
+	return md; 
+}
 
-vec3 domain_warp(vec3 p) {
-	// Сильно зменшено амплітуду (з 1.2 до 0.15), щоб прибрати ефект "завихрення рідини"
-	float amp = 0.15;
-	vec3 offset = vec3(
-		noise3(p + vec3(0.0, 1.0, 5.2)),
-		noise3(p + vec3(1.3, 0.0, 1.3)),
-		noise3(p + vec3(4.5, 2.1, 0.0))
-	) * amp;
-	return p + offset;
+float get_cracks(vec3 p, float scale) {
+	vec3 warp = vec3(noise3(p), noise3(p + 12.3), noise3(p + 24.6)) * 0.4;
+	float dist_to_edge = voronoi_edge((p + warp) * scale);
+	return pow(clamp(1.0 - dist_to_edge * 15.0, 0.0, 1.0), 1.5);
+}
+
+// === ФІЗИЧНИЙ ОБ'ЄМ (ОПТИМІЗОВАНО: Тільки для близьких дистанцій) ===
+float get_physical_cracks(vec3 pos, float dist) {
+	float h = 0.5; 
+	
+	// Макро-тріщини фізично працюють лише до 50м
+	float fade_macro = smoothstep(50.0, 15.0, dist);
+	if (fade_macro > 0.01) {
+		h -= get_cracks(pos, rock_macro_scale) * macro_crack_depth * fade_macro;
+	}
+	
+	// Мікро-тріщини фізично працюють лише до 8м (впритул)
+	float fade_micro = smoothstep(8.0, 2.0, dist);
+	if (fade_micro > 0.01) {
+		h -= get_cracks(pos, rock_micro_scale) * micro_crack_depth * fade_micro;
+	}
+	
+	return h;
+}
+
+// === ВІЗУАЛЬНИЙ ОБ'ЄМ (Для ілюзії тіней на великих відстанях) ===
+float get_visual_cracks(vec3 pos, float dist) {
+	float h = 0.5;
+	
+	float fade_macro = smoothstep(150.0, 300.0, dist);
+	if (fade_macro < 1.0) h -= get_cracks(pos, rock_macro_scale) * macro_crack_depth * (1.0 - fade_macro);
+	
+	float fade_micro = smoothstep(50.0, 100.0, dist);
+	if (fade_micro < 1.0) {
+		h -= get_cracks(pos, rock_micro_scale) * micro_crack_depth * (1.0 - fade_micro);
+		h += noise3(pos * 2.0) * 0.15 * (1.0 - fade_micro); // Шорсткість блоків
+	}
+	
+	return h;
 }
 // ----------------------------------------
-
-// Додай цю змінну, щоб передавати вагу каменю з вершин у пікселі
-varying float v_rock_weight;
 
 void vertex() {
 	world_normal = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
 	vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_pos_var = world_pos;
 
-	// Рахуємо нахил (steepness) прямо у вершинах
 	float slope = dot(normalize(world_normal), vec3(0.0, 1.0, 0.0));
 	float steepness = 1.0 - slope;
 	v_rock_weight = smoothstep(rock_slope_threshold - blend_amount, rock_slope_threshold + blend_amount, steepness);
 
-	// ЕФЕКТ ВДАВЛЮВАННЯ/ВИТЯГУВАННЯ (Displacement)
 	if (v_rock_weight > 0.01) {
 		float dist = distance(CAMERA_POSITION_WORLD, world_pos);
-		
-		// Активуємо ефект лише ПРИ НАБЛИЖЕННІ (наприклад, до 100 метрів)
-		float disp_strength = smoothstep(100.0, 20.0, dist); 
-		
-		if (disp_strength > 0.01) {
-			// Отримуємо значення нашого ламаного каменю
-			vec3 warped_uv = domain_warp(world_pos * rock_scale);
-			float rock_val = fbm_rock(warped_uv, 3); // 3 октави достатньо для вершин
-			
-			// Математика: 0.5 - це нуль, менше - вдавлюємо, більше - витягуємо
-			float offset = (rock_val - 0.4) * 2.5; // Регулюй 2.5 для глибини
-			
-			// Рухаємо вершину вздовж нормалі
-			VERTEX += NORMAL * offset * disp_strength * v_rock_weight;
+		// ЖОРСТКА ЕКОНОМІЯ: Процесор вершин рахує камінь тільки якщо ми ближче 50 метрів
+		if (dist < 50.0) {
+			float r_height = get_physical_cracks(world_pos, dist);
+			float offset = (r_height - 0.5); 
+			VERTEX += NORMAL * offset * v_rock_weight;
 		}
 	}
 }
 
-// === ОНОВЛЕНА ФОРМУЛА ТРІЩИН (Стиль Material Maker) ===
-float fbm_rock(vec3 p, int octaves) {
-	float v = 0.0;
-	float a = 0.5;
-	for (int i = 0; i < 5; i++) {
-		if (i >= octaves) break; 
-		float n = noise3(p);
-		
-		// Математика гострих тріщин: беремо модуль, перевертаємо і звужуємо через pow()
-		n = abs(n * 2.0 - 1.0); 
-		n = 1.0 - n; 
-		n = pow(n, 2.5); // Чим більша цифра, тим гостріші сколи
-		v += a * n; 
-		
-		p = p * 2.3 + vec3(12.3, 4.5, 6.7);
-		p = vec3(p.x * 0.866 - p.z * 0.5, p.y * 1.1, p.x * 0.5 + p.z * 0.866);
-		a *= 0.45;
-	}
-	return clamp(v, 0.0, 1.0);
-}
-
-// ... (domain_warp та vertex залишаються без змін) ...
-
 void fragment() {
 	vec3 world_pos = world_pos_var;
-	float snow_mask = COLOR.a; 
-	float is_grass = UV.x;
-	
 	float dist = distance(CAMERA_POSITION_WORLD, world_pos);
-	float lod_fade = smoothstep(120.0, 150.0, dist);
 	
 	float slope = dot(normalize(world_normal), vec3(0.0, 1.0, 0.0));
 	float steepness = 1.0 - slope;
-
 	float dirt_weight = smoothstep(dirt_slope_threshold - blend_amount, dirt_slope_threshold + blend_amount, steepness);
-	float rock_weight = smoothstep(rock_slope_threshold - blend_amount, rock_slope_threshold + blend_amount, steepness);
-	
+
 	vec3 procedural_rock = rock_color_dark;
 	vec3 final_world_normal = world_normal;
 	
-	if (rock_weight > 0.05) {
-		// АНТИ-АЛІАСИНГ: Плавно розчиняємо шум на відстані від 120 до 200 метрів
-		float far_fade = smoothstep(120.0, 200.0, dist);
+	if (v_rock_weight > 0.05) {
+		// Колір розраховуємо один раз (дешево)
+		float macro_c = get_cracks(world_pos, rock_macro_scale);
+		float micro_c = get_cracks(world_pos, rock_micro_scale);
+		float combined_cracks = max(macro_c, micro_c); 
 		
-		// Якщо ми дуже далеко (за 200м) - взагалі не рахуємо камінь! Економія FPS + жодного ряботиння.
-		if (dist > 200.0) {
-			procedural_rock = mix(rock_color_dark, rock_color_light, 0.4); // Суцільний колір
-		} else {
-			int octaves = 5;
-			float bump_strength = 20.0; 
+		vec3 base_rock = mix(rock_color_light, rock_color_dark, combined_cracks);
+		
+		float far_fade = smoothstep(200.0, 400.0, dist);
+		procedural_rock = mix(base_rock, mix(rock_color_dark, rock_color_light, 0.4), far_fade);
+		
+		// Фейкові тіні відключаються на 150 метрах для економії
+		float normal_fade = smoothstep(80.0, 150.0, dist);
+		if (normal_fade < 1.0) {
+			vec2 e = vec2(0.05, 0.0);
+			float b_str = 4.0 * (1.0 - normal_fade); 
 			
-			if (dist > 100.0) {
-				octaves = 2; // Менше деталей вдалині
-				bump_strength = 5.0; 
-			} else if (dist > 50.0) {
-				octaves = 3;
-				bump_strength = 12.0;
-			}
+			float current_h = get_visual_cracks(world_pos, dist);
+			float dx = get_visual_cracks(world_pos + e.xyy, dist) - current_h;
+			float dy = get_visual_cracks(world_pos + e.yxy, dist) - current_h;
+			float dz = get_visual_cracks(world_pos + e.yyx, dist) - current_h;
 			
-			vec3 warped_uv = domain_warp(world_pos * rock_scale);
-			float rock_val = fbm_rock(warped_uv, octaves);
-			
-			// Малюємо камінь
-			float rock_mask = smoothstep(0.15, 0.45, rock_val);
-			vec3 detailed_rock = mix(rock_color_dark, rock_color_light, rock_mask);
-			
-			// МАГІЯ ЗГЛАДЖУВАННЯ: розмиваємо камінь до суцільного кольору чим далі він від камери
-			procedural_rock = mix(detailed_rock, mix(rock_color_dark, rock_color_light, 0.4), far_fade);
-			
-			// Об'єм розраховуємо тільки якщо камінь не розмитий в нуль
-			bump_strength *= (1.0 - far_fade);
-			
-			if (bump_strength > 0.0) {
-				vec2 e = vec2(0.05, 0.0);
-				float dx = fbm_rock(warped_uv + e.xyy, octaves) - rock_val;
-				float dy = fbm_rock(warped_uv + e.yxy, octaves) - rock_val;
-				float dz = fbm_rock(warped_uv + e.yyx, octaves) - rock_val;
-				
-				vec3 detail_normal = vec3(-dx, -dy, -dz) * bump_strength;
-				vec3 rock_bump_normal = normalize(world_normal + detail_normal);
-				
-				final_world_normal = normalize(mix(world_normal, rock_bump_normal, rock_weight));
-			}
+			final_world_normal = normalize(world_normal + vec3(-dx, -dy, -dz) * b_str);
 		}
 	}
 	
 	NORMAL = (VIEW_MATRIX * vec4(final_world_normal, 0.0)).xyz;
 	
-	// --- ІЛЮЗІЯ ТРАВИ ТА ВІТЕР ---
-	float wind_speed = 1.5;
-	float wind = sin(world_pos.x * 0.08 + TIME * wind_speed) * sin(world_pos.z * 0.08 + TIME * wind_speed * 0.8);
-	float ground_tex = sin(world_pos.x * 0.15) * cos(world_pos.z * 0.15);
-	
-	float micro_grass = noise(world_pos.xz * 3.0);
-	float fake_grass_boost = (0.15 + micro_grass * 0.08) * lod_fade * is_grass;
-	
-	float wind_shadows = 1.0 + (((wind * 0.04) + (ground_tex * 0.03)) * lod_fade * is_grass);
-	vec3 biome_color = clamp((COLOR.rgb * wind_shadows) + (COLOR.rgb * fake_grass_boost), vec3(0.0), vec3(1.0));
-	
-	vec3 slope_color = mix(biome_color, dirt_color, dirt_weight);
-	slope_color = mix(slope_color, procedural_rock, rock_weight); 
-	
-	float rock_on_snow = smoothstep(0.8, 0.95, steepness);
-	vec3 final_snow = mix(snow_color, procedural_rock, rock_on_snow * 0.5);
-	
-	ALBEDO = mix(slope_color, final_snow, snow_mask);
+	vec3 slope_color = mix(COLOR.rgb, dirt_color, dirt_weight);
+	slope_color = mix(slope_color, procedural_rock, v_rock_weight);
+	ALBEDO = mix(slope_color, snow_color, COLOR.a);
 	ROUGHNESS = 0.85;
 }

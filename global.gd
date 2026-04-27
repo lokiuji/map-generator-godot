@@ -145,6 +145,7 @@ func get_raw_elevation(x: float, z: float) -> float:
 	var e = (_get_seamless_noise(elevation_noise, x, z) + 1.0) / 2.0
 	return clamp(e - get_falloff(x, z), 0.0, 1.0)
 
+# Оновлена функція get_biome_data у global.gd
 func get_biome_data(x: float, z: float) -> Dictionary:
 	var e = get_raw_elevation(x, z)
 	var m = (_get_seamless_noise(moisture_noise, x, z) + 1.0) / 2.0
@@ -153,70 +154,68 @@ func get_biome_data(x: float, z: float) -> Dictionary:
 	var c = Color(0.08, 0.25, 0.45)
 	var is_g = false
 	
-	# ЗАДАЄМО НАТУРАЛЬНІ ТА ТЕМНІШІ КОЛЬОРИ БІОМІВ
-	# Ці кольори тепер слугуватимуть "корінням" для трави
+	# Кольори для Deposition (накопичення осадів)
 	var col_sand = Color(0.55, 0.45, 0.30)
-	var col_desert = Color(0.65, 0.50, 0.35)
-	var col_grassland = Color(0.12, 0.22, 0.08) # Натуральний темно-зелений
-	var col_forest = Color(0.06, 0.16, 0.05)    # Глибокий хвойний/лісовий
-	var col_tundra = Color(0.25, 0.28, 0.22)    # Холодний сіро-зелений
-	var col_taiga = Color(0.12, 0.20, 0.15)     # Темно-сіро-зелений (смереки)
+	var col_dirt = Color(0.35, 0.22, 0.12) # Колір вологого ґрунту в низинах
+	
+	var col_grassland = Color(0.12, 0.22, 0.08)
+	var col_forest = Color(0.06, 0.16, 0.05)
+	var col_tundra = Color(0.25, 0.28, 0.22)
+	var col_taiga = Color(0.12, 0.20, 0.15)
 	var col_snow = Color(0.85, 0.90, 0.95)
 	
 	if e < 0.35: 
-		# Плавний перехід глибини океану
 		c = Color(0.05, 0.15, 0.35).lerp(Color(0.08, 0.25, 0.45), e / 0.35)
 	elif e < 0.38: 
 		b = "beach"
-		# Плавний перехід від води до піску
-		var t = smoothstep(0.35, 0.38, e)
-		c = Color(0.08, 0.25, 0.45).lerp(col_sand, t)
+		c = Color(0.08, 0.25, 0.45).lerp(col_sand, smoothstep(0.35, 0.38, e))
 	elif e > 0.70: 
 		b = "snow"
-		# Плавний перехід до снігу на вершинах гір
 		var t = smoothstep(0.70, 0.85, e)
-		var base_cold = col_tundra.lerp(col_taiga, smoothstep(0.3, 0.7, m))
-		c = base_cold.lerp(col_snow, t)
+		c = col_tundra.lerp(col_taiga, smoothstep(0.3, 0.7, m)).lerp(col_snow, t)
 	else:
-		# МАГІЯ ГРАДІЄНТІВ: Плавне змішування біомів за вологостю
-		
-		# 1. Формуємо сухий градієнт (від пустелі до сухого піску)
-		var dry_col = col_desert.lerp(col_sand, smoothstep(0.1, 0.4, m))
-		
-		# 2. Формуємо вологий градієнт (від поля до густого лісу)
+		# Базове змішування
+		var dry_col = Color(0.65, 0.50, 0.35).lerp(col_sand, smoothstep(0.1, 0.4, m))
 		var wet_col = col_grassland.lerp(col_forest, smoothstep(0.4, 0.8, m))
-		
-		# 3. Змішуємо суху та вологу зони у надширокий градієнт
 		c = dry_col.lerp(wet_col, smoothstep(0.25, 0.55, m))
 		
-		# 4. Якщо висота наближається до гір (0.55 - 0.70), домішуємо холодні кольори
-		var elevation_transition = smoothstep(0.55, 0.70, e)
-		var cold_col = col_tundra.lerp(col_taiga, smoothstep(0.3, 0.7, m))
-		c = c.lerp(cold_col, elevation_transition)
+		# ЛОГІКА НАКОПИЧЕННЯ ОСАДІВ (Deposition):
+		# Якщо висота низька (ближче до води) - замінюємо колір на ґрунт
+		var deposition_mask = smoothstep(0.45, 0.38, e)
+		c = c.lerp(col_dirt, deposition_mask * 0.7)
 		
-		# Визначаємо, чи садити тут траву
+		var elevation_transition = smoothstep(0.55, 0.70, e)
+		c = c.lerp(col_tundra.lerp(col_taiga, smoothstep(0.3, 0.7, m)), elevation_transition)
+		
 		is_g = m > 0.3 and e < 0.65
 		if is_g: b = "grassland" if m < 0.6 else "forest"
 		else: b = "desert" if e < 0.55 else "tundra"
 
 	return {"elevation": e, "moisture": m, "biome": b, "color": c, "is_grassy": is_g}
 
+# Оновлена функція висоти з гідравлічною ерозією у global.gd
 func _get_final_height(world_x: float, world_z: float) -> float:
 	var e = get_raw_elevation(world_x, world_z)
 	if e < 0.35: return 5.0 + (e - 0.35) * 40.0
 	
 	var land = pow(e - 0.35, 1.2) * 150.0
 	var ridge = smoothstep(0.4, 0.85, e)
+	
+	# Базові гори
 	var peaks = _get_seamless_noise(mountain_noise, world_x, world_z) * 180.0 
 	
-	var base_height = 5.0 + land + (peaks * ridge)
+	# 1. ПЛАВНА ЕРОЗІЯ (виправлено гострі піки):
+	# Замість агресивного вирізання на 60%, робимо м'які долини на макс 25%
+	var erosion_noise_val = _get_seamless_noise(moisture_noise, world_x * 1.5, world_z * 1.5)
+	var erosion_carve = smoothstep(0.3, 0.7, erosion_noise_val)
+	var eroded_peaks = peaks - (peaks * erosion_carve * 0.25)
 	
-	# ДОДАЄМО ФІЗИЧНІ ТРІЩИНИ ТА ВИСТУПИ КАМЕНЮ
-	if e > 0.55: # Тільки там, де починаються гори
-		# Використовуємо дрібний шум для скель
+	var base_height = 5.0 + land + (eroded_peaks * ridge)
+	
+	# 2. Фізичні нерівності каменю (Макро-рельєф)
+	if e > 0.55:
 		var rock_noise_val = _get_seamless_noise(rock_detail_noise, world_x, world_z)
-		# Вдавлюємо/витягуємо поверхню (наприклад, до 5 метрів у глибину/висоту)
-		var rock_strength = smoothstep(0.55, 0.75, e) * 5.0
+		var rock_strength = smoothstep(0.55, 0.75, e) * 4.0
 		base_height += (rock_noise_val * 2.0 - 1.0) * rock_strength
 		
 	return base_height
