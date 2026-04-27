@@ -39,14 +39,16 @@ void fragment() {
 	ALPHA = tex.a;
 	ALPHA_SCISSOR_THRESHOLD = 0.5; 
 	
-	// COLOR.rgb містить точний колір біому під цим кущем трави
-	// Робимо корінь трохи темнішим (множимо на 0.5), а верхівку - оригінальним кольором
-	vec3 base_color = mix(COLOR.rgb * 0.5, COLOR.rgb, 1.0 - UV.y);
+	// Ступінь 3.0 означає, що перехід нелінійний. 
+	// Низ і середина трави будуть дуже близькими до кольору поверхні (COLOR.rgb), 
+	// і лише верхня третина почне різко ставати яскраво-зеленою.
+	float tip_mask = pow(1.0 - UV.y, 3.0); 
 	
-	// Імітуємо відблиск вітру, трохи освітлюючи верхівки (але не більше ніж на 15%)
-	vec3 final_color = mix(base_color, COLOR.rgb * 1.15, wind_val * (1.0 - UV.y) * 0.6);
+	vec3 base_color = mix(COLOR.rgb, COLOR.rgb * 1.8, tip_mask);
 	
-	// Запобігаємо появі "лайму" на самій траві
+	// Вітер також виділяє лише найвищі кінчики
+	vec3 final_color = mix(base_color, COLOR.rgb * 2.2, wind_val * tip_mask * 0.5);
+	
 	ALBEDO = clamp(final_color, vec3(0.0), vec3(1.0));
 	
 	// ПРИБРАЛИ EMISSION! Трава більше не світиться у темряві
@@ -57,4 +59,25 @@ void fragment() {
 	// Форсуємо нормалі вгору, щоб трава освітлювалась як плоска земля
 	vec3 up_normal = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
 	NORMAL = normalize(mix(NORMAL, up_normal, 0.9));
+}
+void light() {
+	// 1. Рахуємо кут падіння сонячних променів на травинку
+	float NdotL = dot(NORMAL, LIGHT);
+	
+	// 2. ІМІТАЦІЯ БАГУ (Штучна тінь):
+	// Створюємо дуже різкий перехід від світла до тіні (toon shading).
+	// Це дасть той самий контрастний об'єм, який ви бачили на краях екрану.
+	float fake_shadow = smoothstep(0.0, 0.15, NdotL);
+	
+	// 3. Змішуємо нашу фейкову тінь з реальними тінями (ATTENUATION).
+	// Тепер, навіть якщо реальна тінь у центрі екрану зникне, 
+	// fake_shadow гарантовано залишить травинку наполовину затіненою!
+	float final_shadow = min(fake_shadow, ATTENUATION);
+	
+	// 4. Налаштовуємо колір самої тіні
+	// Множимо на 0.25, щоб тінь була глибокою, але не чорною (зберігала колір біому)
+	vec3 shadow_color = ALBEDO * 0.25; 
+	
+	// 5. Застосовуємо освітлення: змішуємо темну та світлу сторони
+	DIFFUSE_LIGHT += mix(shadow_color, ALBEDO * LIGHT_COLOR, final_shadow);
 }

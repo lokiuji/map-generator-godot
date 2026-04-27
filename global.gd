@@ -142,20 +142,57 @@ func get_biome_data(x: float, z: float) -> Dictionary:
 	var e = get_raw_elevation(x, z)
 	var m = (_get_seamless_noise(moisture_noise, x, z) + 1.0) / 2.0
 	
-	var b = "ocean"; var c = Color(0.1, 0.3, 0.6); var is_g = false
-	if e < 0.35: c = Color(0.1, 0.3, 0.6).lerp(Color(0.15, 0.45, 0.65), e / 0.35)
-	elif e < 0.38: b = "beach"; c = Color(0.76, 0.70, 0.50)
-	elif e > 0.75: b = "snow"; c = Color(0.9, 0.95, 1.0)
-	elif e > 0.65:
-		b = "tundra" if m < 0.5 else "taiga"
-		c = Color(0.239, 0.733, 0.444, 1.0) if m < 0.5 else Color(0.40, 0.50, 0.40)
+	var b = "ocean"
+	var c = Color(0.08, 0.25, 0.45)
+	var is_g = false
+	
+	# ЗАДАЄМО НАТУРАЛЬНІ ТА ТЕМНІШІ КОЛЬОРИ БІОМІВ
+	# Ці кольори тепер слугуватимуть "корінням" для трави
+	var col_sand = Color(0.55, 0.45, 0.30)
+	var col_desert = Color(0.65, 0.50, 0.35)
+	var col_grassland = Color(0.12, 0.22, 0.08) # Натуральний темно-зелений
+	var col_forest = Color(0.06, 0.16, 0.05)    # Глибокий хвойний/лісовий
+	var col_tundra = Color(0.25, 0.28, 0.22)    # Холодний сіро-зелений
+	var col_taiga = Color(0.12, 0.20, 0.15)     # Темно-сіро-зелений (смереки)
+	var col_snow = Color(0.85, 0.90, 0.95)
+	
+	if e < 0.35: 
+		# Плавний перехід глибини океану
+		c = Color(0.05, 0.15, 0.35).lerp(Color(0.08, 0.25, 0.45), e / 0.35)
+	elif e < 0.38: 
+		b = "beach"
+		# Плавний перехід від води до піску
+		var t = smoothstep(0.35, 0.38, e)
+		c = Color(0.08, 0.25, 0.45).lerp(col_sand, t)
+	elif e > 0.70: 
+		b = "snow"
+		# Плавний перехід до снігу на вершинах гір
+		var t = smoothstep(0.70, 0.85, e)
+		var base_cold = col_tundra.lerp(col_taiga, smoothstep(0.3, 0.7, m))
+		c = base_cold.lerp(col_snow, t)
 	else:
-		if m < 0.35: b = "desert"; c = Color(0.85, 0.70, 0.50)
-		elif m < 0.65: b = "grassland"; c = Color(0.20, 0.35, 0.15); is_g = true
-		else: b = "forest"; c = Color(0.10, 0.30, 0.05); is_g = true
+		# МАГІЯ ГРАДІЄНТІВ: Плавне змішування біомів за вологостю
 		
-	return {"elevation": e, "moisture": m, "biome": b, "color": c, "is_grassy": is_g}
+		# 1. Формуємо сухий градієнт (від пустелі до сухого піску)
+		var dry_col = col_desert.lerp(col_sand, smoothstep(0.1, 0.4, m))
+		
+		# 2. Формуємо вологий градієнт (від поля до густого лісу)
+		var wet_col = col_grassland.lerp(col_forest, smoothstep(0.4, 0.8, m))
+		
+		# 3. Змішуємо суху та вологу зони у надширокий градієнт
+		c = dry_col.lerp(wet_col, smoothstep(0.25, 0.55, m))
+		
+		# 4. Якщо висота наближається до гір (0.55 - 0.70), домішуємо холодні кольори
+		var elevation_transition = smoothstep(0.55, 0.70, e)
+		var cold_col = col_tundra.lerp(col_taiga, smoothstep(0.3, 0.7, m))
+		c = c.lerp(cold_col, elevation_transition)
+		
+		# Визначаємо, чи садити тут траву
+		is_g = m > 0.3 and e < 0.65
+		if is_g: b = "grassland" if m < 0.6 else "forest"
+		else: b = "desert" if e < 0.55 else "tundra"
 
+	return {"elevation": e, "moisture": m, "biome": b, "color": c, "is_grassy": is_g}
 func _get_final_height(world_x: float, world_z: float) -> float:
 	var e = get_raw_elevation(world_x, world_z)
 	if e < 0.35: return 5.0 + (e - 0.35) * 40.0

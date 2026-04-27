@@ -40,8 +40,10 @@ transform = Transform3D(-0.50000006, -0.2961981, 0.81379765, 0, 0.9396926, 0.342
 light_color = Color(0.9160354, 0.89598656, 0.7335008, 1)
 light_energy = 0.3
 shadow_enabled = true
+shadow_bias = 0.02
 directional_shadow_mode = 1
-directional_shadow_max_distance = 80.0
+directional_shadow_blend_splits = true
+directional_shadow_max_distance = 150.0
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="DirectionalLight3D" unique_id=2007437468]
 environment = SubResource("Environment_noarx")
