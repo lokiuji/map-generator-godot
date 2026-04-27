@@ -15,32 +15,23 @@ void vertex() {
 }
 
 void fragment() {
-	// Отримуємо глобальні координати пікселя
 	vec3 world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float snow_mask = COLOR.a; 
+	float is_grass = UV.x; 
 	
-	// --- ВІДСТАНЬ ДО КАМЕРИ ---
-	// dist - це дистанція від камери до поточного шматка землі.
 	float dist = distance(CAMERA_POSITION_WORLD, world_pos);
-	
-	// lod_fade буде 0.0 зблизька (шуму не видно) і плавно стане 1.0 після 200 метрів
 	float lod_fade = smoothstep(120.0, 200.0, dist);
 	
-	// --- АНІМАЦІЯ ВІТРУ ТА ЛАНДШАФТУ ---
-	// М'які хвилі вітру (без сіток і різких переходів)
 	float wind_speed = 1.5;
 	float wind = sin(world_pos.x * 0.08 + TIME * wind_speed) * sin(world_pos.z * 0.08 + TIME * wind_speed * 0.8);
-	
-	// Плями ландшафту: додає природну нерівномірність (світліші/темніші ділянки поля)
 	float ground_tex = sin(world_pos.x * 0.15) * cos(world_pos.z * 0.15);
 	
-	// Комбінуємо хвилі і множимо на lod_fade (так ми приховуємо цей ефект перед камерою)
-	float wind_shadows = ((wind * 0.04) + (ground_tex * 0.03)) * lod_fade;
+	// ВИПРАВЛЕНО: Множимо колір, а не додаємо. Це не дає значенням вийти за 1.0 (лайм).
+	// wind_shadows тепер буде множником від 0.93 до 1.07
+	float wind_shadows = 1.0 + (((wind * 0.04) + (ground_tex * 0.03)) * lod_fade * is_grass);
 	
-	// Застосовуємо цей рух ТІЛЬКИ до трав'яних біомів (маскуємо сніг)
-	vec3 biome_color = COLOR.rgb + (wind_shadows * (1.0 - snow_mask));
+	vec3 biome_color = COLOR.rgb * wind_shadows;
 	
-	// --- Стандартний розрахунок схилів ---
 	float slope = dot(normalize(world_normal), vec3(0.0, 1.0, 0.0));
 	float steepness = 1.0 - slope;
 	

@@ -74,13 +74,14 @@ func _process(_delta):
 		_check_lods_continuously()
 
 	if chunks_building < MAX_CONCURRENT_CHUNKS:
-		if lod_update_queue.size() > 0 and lod_update_queue[0].chunk_pos.distance_to(current_player_chunk) <= 4.0:
-			var c = lod_update_queue.pop_front()
-			if is_instance_valid(c) and c.is_ready and not c.pending_kill:
-				var lod = get_lod_for_distance(c.chunk_pos.distance_to(current_player_chunk))
-				if c.resolution != lod["res"]:
-					c.set_lod(lod["res"], lod["grass"], procedural_grass_mesh, lod["col"])
-		elif chunk_spawn_queue.size() > 0:
+		# Отримуємо дистанції до найперших завдань у чергах
+		var dist_spawn = 9999.0
+		var dist_lod = 9999.0
+		if chunk_spawn_queue.size() > 0: dist_spawn = chunk_spawn_queue[0].distance_to(current_player_chunk)
+		if lod_update_queue.size() > 0: dist_lod = lod_update_queue[0].chunk_pos.distance_to(current_player_chunk)
+		
+		# ІНТЕЛЕКТУАЛЬНА ЧЕРГА: Завжди обираємо те завдання, яке фізично ближче до гравця!
+		if dist_spawn < dist_lod and chunk_spawn_queue.size() > 0:
 			spawn_chunk(chunk_spawn_queue.pop_front())
 		elif lod_update_queue.size() > 0:
 			var c = lod_update_queue.pop_front()
@@ -127,11 +128,10 @@ func _check_lods_continuously():
 	lod_update_queue.sort_custom(func(a, b): return a.chunk_pos.distance_to(current_player_chunk) < b.chunk_pos.distance_to(current_player_chunk))
 
 func get_lod_for_distance(dist: float) -> Dictionary:
-	if dist <= 3.5: return {"res": 50, "grass": true, "col": true}   # Найвища якість + фізика
+	if dist <= 3.5: return {"res": 50, "grass": true, "col": true}   # Висока якість + фізика
 	if dist <= 6.0: return {"res": 25, "grass": true, "col": true}   # Середня якість + фізика
 	if dist <= 12.0: return {"res": 12, "grass": false, "col": false} # Тільки графіка
-	if dist <= 24.0: return {"res": 4, "grass": false, "col": false}  # Мило для горизонту
-	return {"res": 2, "grass": false, "col": false}                   # Екстремальна даль                 
+	return {"res": 4, "grass": false, "col": false}                  # Далекий обрій              
 
 func update_chunks():
 	if not player: return

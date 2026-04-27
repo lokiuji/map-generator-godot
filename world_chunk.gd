@@ -88,7 +88,7 @@ func _build_terrain_data_in_thread():
 	var rng = RandomNumberGenerator.new()
 	rng.seed = hash(str(chunk_pos) + str(chunk_world_offset))
 	
-	var grass_data = [] # ТЕПЕР МИ ЗБЕРІГАЄМО І КОЛІР, І ПОЗИЦІЮ
+	var grass_data = [] 
 	var needs_water = false
 	
 	for z in range(resolution + 1):
@@ -108,7 +108,10 @@ func _build_terrain_data_in_thread():
 			var col = b_data["color"]
 			col.a = smoothstep(100.0, 130.0, py) 
 			st.set_color(col)
-			st.set_uv(Vector2(float(x)/resolution, float(z)/resolution))
+			
+			var is_g = 1.0 if b_data["is_grassy"] else 0.0
+			st.set_uv(Vector2(is_g, 0.0))
+			
 			st.add_vertex(Vector3(local_x, py, local_z))
 			if py < 4.9: needs_water = true
 			
@@ -123,7 +126,7 @@ func _build_terrain_data_in_thread():
 			st.add_index(i + resolution + 1)
 			
 	if grass_mesh != null:
-		var grass_density = 1.5 
+		var grass_density = 0.4 
 		var num_grass = int(chunk_size * chunk_size * grass_density)
 		for i in range(num_grass):
 			if is_cancelled: return
@@ -137,16 +140,14 @@ func _build_terrain_data_in_thread():
 			
 			if py > 4.5 and b_data["is_grassy"]:
 				var norm = _get_normal(wx, wz)
-				if norm.dot(Vector3.UP) > 0.6:
+				if norm.dot(Vector3.UP) > 0.85:
 					var g_pos = Vector3(lx, py - 0.1, lz)
-					var g_basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.5, rng.randf_range(0.8, 1.2), 1.5))
-					
-					var color_variation = rng.randf_range(0.85, 1.15)
-					var final_grass_color = b_data["color"] * color_variation
+					var g_basis = Basis().rotated(Vector3.UP, rng.randf() * TAU).scaled(Vector3(2.5, rng.randf_range(1.5, 2.0), 2.5))
 					
 					grass_data.append({
 						"transform": Transform3D(g_basis, g_pos), 
-						"color": final_grass_color
+						"color": b_data["color"],
+						"normal": norm # <-- МАГІЯ: Зберігаємо нормаль землі
 					})
 	
 	var final_mesh = st.commit()
@@ -204,7 +205,8 @@ func _on_thread_finished(data: Dictionary):
 		new_mmi = MultiMeshInstance3D.new()
 		var mm = MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_colors = true # ВМИКАЄМО КОЛЬОРИ
+		mm.use_colors = true
+		mm.use_custom_data = true # МАГІЯ: Дозволяємо передачу додаткових даних
 		mm.mesh = grass_mesh
 		mm.instance_count = data["grass"].size()
 		new_mmi.multimesh = mm
@@ -212,7 +214,11 @@ func _on_thread_finished(data: Dictionary):
 		
 		for i in range(data["grass"].size()): 
 			mm.set_instance_transform(i, data["grass"][i]["transform"])
-			mm.set_instance_color(i, data["grass"][i]["color"]) # ЗАСТОСОВУЄМО КОЛІР БІОМУ
+			mm.set_instance_color(i, data["grass"][i]["color"])
+			
+			# Передаємо нормаль землі у відеокарту
+			var n = data["grass"][i]["normal"]
+			mm.set_instance_custom_data(i, Color(n.x, n.y, n.z, 0.0))
 			
 		add_child(new_mmi)
 		
