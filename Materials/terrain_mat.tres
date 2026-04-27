@@ -1,15 +1,15 @@
 [gd_resource type="ShaderMaterial" format=3 uid="uid://d28jla4t4xqs3"]
 
 [ext_resource type="Shader" uid="uid://r00iywomgugq" path="res://Materials/terrain_pro.gdshader" id="1_opkci"]
-[ext_resource type="Texture2D" uid="uid://j8ygkqb5vrxe" path="res://Textures/rock-stone-texture.jpg" id="2_gg4jl"]
 
 [resource]
 render_priority = 0
 shader = ExtResource("1_opkci")
-shader_parameter/rock_texture = ExtResource("2_gg4jl")
-shader_parameter/rock_texture_scale = 2.0
+shader_parameter/rock_color_dark = Color(0.12, 0.12, 0.15, 1)
+shader_parameter/rock_color_light = Color(0.35, 0.35, 0.38, 1)
+shader_parameter/rock_scale = 5.5
 shader_parameter/dirt_color = Color(0.4, 0.25, 0.15, 1)
 shader_parameter/snow_color = Color(0.81, 0.81, 0.81, 1)
 shader_parameter/dirt_slope_threshold = 0.35
-shader_parameter/rock_slope_threshold = 1.0
+shader_parameter/rock_slope_threshold = 0.3
 shader_parameter/blend_amount = 0.08
