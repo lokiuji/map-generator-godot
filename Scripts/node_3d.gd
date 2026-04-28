@@ -157,7 +157,7 @@ func update_chunks():
 func spawn_chunk(p: Vector2):
 	chunks_building += 1
 	var c = Node3D.new()
-	c.set_script(preload("res://world_chunk.gd"))
+	c.set_script(preload("res://Scripts/world_chunk.gd"))
 	c.position = Vector3(p.x * CHUNK_SIZE, 0, p.y * CHUNK_SIZE)
 	c.chunk_ready.connect(_on_chunk_ready)
 	add_child(c)

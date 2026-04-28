@@ -10,19 +10,14 @@ config_version=5
 
 [application]
 
-config/name="MapGeneratorGodot (Gimini)"
+config/name="MapGeneratorGodot"
 run/main_scene="uid://cqjvub55qax8j"
 config/features=PackedStringArray("4.6", "Forward Plus")
-config/icon="res://icon.svg"
+config/icon="uid://1ewn3xdhpjyi"
 
 [autoload]
 
-Global="*uid://dhvkeyb51ajub"
-
-[editor]
-
-version_control/plugin_name="GitPlugin"
-version_control/autoload_on_startup=true
+Global="*res://Scripts/global.gd"
 
 [input]
 
