@@ -106,25 +106,21 @@ void get_material_weights(vec3 w_pos, vec3 w_norm, out float cliff, out float pe
 	float steepness = 1.0 - dot(w_norm, vec3(0.0, 1.0, 0.0));
 	float outcropping = get_outcropping_mask(w_pos.xz);
 	
-	// 1. ЯДРО (Камінь) - Ультра-жорсткий перехід
 	float rock_steep = smoothstep(0.60, 0.61, steepness);
 	float rock_noise = smoothstep(0.75, 0.76, outcropping);
 	cliff = clamp(rock_steep + rock_noise, 0.0, 1.0);
 	
-	// 2. ПЕРШЕ КІЛЬЦЕ (Галька)
 	float pebble_steep = smoothstep(0.50, 0.51, steepness);
 	float pebble_noise = smoothstep(0.65, 0.66, outcropping);
 	float total_pebble = clamp(pebble_steep + pebble_noise, 0.0, 1.0);
 	
-	// 3. ДРУГЕ КІЛЬЦЕ (Земля)
 	float dirt_steep = smoothstep(0.40, 0.41, steepness);
 	float dirt_noise = smoothstep(0.55, 0.56, outcropping);
 	float total_dirt = clamp(dirt_steep + dirt_noise, 0.0, 1.0);
 	
-	// 4. ПІСОК (Берегова лінія)
-	float sand_area = 1.0 - smoothstep(4.8, 5.8, w_pos.y);
+	// ВИПРАВЛЕНО: Пісок тепер має велику і гарантовану площу (до Y=7.5)
+	float sand_area = 1.0 - smoothstep(4.8, 7.5, w_pos.y);
 
-	// --- ЖОРСТКІ ПРІОРИТЕТИ ---
 	sand   = clamp(sand_area, 0.0, 1.0);
 	cliff  = clamp(cliff - sand, 0.0, 1.0); 
 	pebble = clamp(total_pebble - cliff - sand, 0.0, 1.0);
@@ -179,13 +175,11 @@ void fragment() {
 	w = pow(w, vec3(8.0));
 	vec3 tri_w = w / (w.x + w.y + w.z);
 
-	// 1. СКЕЛІ
 	vec2 r_x = w_pos.zy * rock_scale; vec2 r_y = w_pos.xz * rock_scale; vec2 r_z = w_pos.xy * rock_scale;
 	vec3 cliff_alb = texture(rock_albedo, r_x).rgb * tri_w.x + texture(rock_albedo, r_y).rgb * tri_w.y + texture(rock_albedo, r_z).rgb * tri_w.z;
 	vec3 cliff_nrm = texture(rock_normal, r_x).rgb * tri_w.x + texture(rock_normal, r_y).rgb * tri_w.y + texture(rock_normal, r_z).rgb * tri_w.z;
 	vec3 cliff_orm = texture(rock_orm, r_x).rgb * tri_w.x + texture(rock_orm, r_y).rgb * tri_w.y + texture(rock_orm, r_z).rgb * tri_w.z;
 
-	// 2. ТЕКСТУРИ РІВНИН
 	vec2 p_uv = w_pos.xz * pebble_scale;
 	vec3 p_alb = texture(pebble_albedo, p_uv).rgb;
 	vec3 p_nrm = texture(pebble_normal, p_uv).rgb;
@@ -206,23 +200,18 @@ void fragment() {
 	vec3 s_nrm = texture(sand_normal, s_uv).rgb;
 	vec3 s_orm_tex = texture(sand_orm, s_uv).rgb;
 
-	// 3. ТОНУВАННЯ БІОМОМ
 	vec3 tint = mix(vec3(1.0), COLOR.rgb, biome_tint_strength);
 	p_alb *= tint;
 	g_alb *= tint;
 	d_alb *= tint;
 	s_alb *= tint;
 
-	// 4. ЗМІШУВАННЯ
 	vec3 final_albedo = cliff_alb * w_cliff + p_alb * w_pebble + g_alb * w_grass + d_alb * w_dirt + s_alb * w_sand;
 	vec3 final_normal = cliff_nrm * w_cliff + p_nrm * w_pebble + g_nrm * w_grass + d_nrm * w_dirt + s_nrm * w_sand;
 	vec3 final_orm    = cliff_orm * w_cliff + p_orm_tex * w_pebble + g_orm_tex * w_grass + d_orm_tex * w_dirt + s_orm_tex * w_sand;
 
 	final_albedo = mix(final_albedo, snow_color, COLOR.a);
 
-	// ==========================================
-	// 5. ФІНАЛЬНИЙ ВИВІД (БЕЗ ДЗЕРКАЛЬНОСТІ)
-	// ==========================================
 	ALBEDO = clamp(final_albedo * global_brightness, 0.0, 1.0);
 
 	float normal_fade = smoothstep(150.0, 50.0, dist); 
@@ -230,9 +219,8 @@ void fragment() {
 	vec3 normal_offset = (final_normal * 2.0 - 1.0) * current_normal_scale * normal_fade;
 	NORMAL = (VIEW_MATRIX * vec4(normalize(w_norm + normal_offset), 0.0)).xyz;
 	
-	// ПРИБИРАЄМО "ДЗЕРКАЛО" І "БЛЯКЛІСТЬ" НА ГОРИЗОНТІ:
-	SPECULAR = 0.02; // Відключає відблиски неба на обрії
+	SPECULAR = 0.02; 
 	AO = final_orm.r; 
-	ROUGHNESS = clamp(final_orm.g, 0.75, 1.0); // Земля матова! (0.75+)
+	ROUGHNESS = clamp(final_orm.g, 0.75, 1.0); 
 	METALLIC = 0.0; 
 }

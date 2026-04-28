@@ -218,7 +218,7 @@ func _on_thread_finished(data: Dictionary):
 			
 			# Передаємо нормаль землі у відеокарту
 			var n = data["grass"][i]["normal"]
-			mm.set_instance_custom_data(i, Color(n.x, n.y, n.z, 0.0))
+			mm.set_instance_custom_data(i, Color(n.x * 0.5 + 0.5, n.y * 0.5 + 0.5, n.z * 0.5 + 0.5, 0.0))
 			
 		add_child(new_mmi)
 		
