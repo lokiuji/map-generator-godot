@@ -2,29 +2,22 @@
 
 [ext_resource type="Shader" uid="uid://kvcv042k74fk" path="res://Materials/water_pro.gdshader" id="1_t63lw"]
 
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_xo7iq"]
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_2jxmx"]
+noise = SubResource("FastNoiseLite_xo7iq")
+seamless = true
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_xspuw"]
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_wh3j0"]
+noise = SubResource("FastNoiseLite_xspuw")
+seamless = true
+
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_t63lw"]
-frequency = 0.0146
 
-[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_t63lw"]
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_nsqrp"]
 noise = SubResource("FastNoiseLite_t63lw")
-seamless = true
-as_normal_map = true
-
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_nsqrp"]
-seed = 15
-frequency = 0.0162
-
-[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_xo7iq"]
-noise = SubResource("FastNoiseLite_nsqrp")
-seamless = true
-as_normal_map = true
-
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_2jxmx"]
-seed = -19
-frequency = 0.002
-
-[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_xspuw"]
-noise = SubResource("FastNoiseLite_2jxmx")
 seamless = true
 
 [resource]
@@ -35,15 +28,15 @@ shader_parameter/albedo2 = Color(0, 0.47, 0.76, 1)
 shader_parameter/color_deep = Color(0.11, 0.29, 0.33, 1)
 shader_parameter/color_shallow = Color(0, 0.47, 0.76, 1)
 shader_parameter/edge_color = Color(1, 1, 1, 1)
-shader_parameter/metallic = 0.0
-shader_parameter/roughness = 0.02
-shader_parameter/wave = SubResource("NoiseTexture2D_xspuw")
-shader_parameter/texture_normal = SubResource("NoiseTexture2D_t63lw")
-shader_parameter/texture_normal2 = SubResource("NoiseTexture2D_xo7iq")
+shader_parameter/metallic = 0.027000001282499998
+shader_parameter/roughness = 0.3550000168625
+shader_parameter/wave = SubResource("NoiseTexture2D_nsqrp")
+shader_parameter/texture_normal = SubResource("NoiseTexture2D_2jxmx")
+shader_parameter/texture_normal2 = SubResource("NoiseTexture2D_wh3j0")
 shader_parameter/wave_direction = Vector2(2, 0)
 shader_parameter/wave_direction2 = Vector2(0, 1)
-shader_parameter/time_scale = 0.025
-shader_parameter/noise_scale = 10.0
+shader_parameter/time_scale = 0.05499999877064
+shader_parameter/noise_scale = 100.0
 shader_parameter/height_scale = 0.6
 shader_parameter/beers_law = 0.5
 shader_parameter/depth_offset = -0.1

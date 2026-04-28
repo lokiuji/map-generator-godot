@@ -1,25 +1,62 @@
 [gd_resource type="ShaderMaterial" format=3 uid="uid://d28jla4t4xqs3"]
 
 [ext_resource type="Shader" uid="uid://r00iywomgugq" path="res://Materials/terrain_pro.gdshader" id="1_opkci"]
-[ext_resource type="Texture2D" uid="uid://n0mqiex1j3dl" path="res://Textures/Rock/rocky_albedo.png" id="2_44ygg"]
-[ext_resource type="Texture2D" uid="uid://7j16mlg4h7i1" path="res://Textures/Rock/rocky_emission.png" id="3_dtyqj"]
-[ext_resource type="Texture2D" uid="uid://y8w7128qfo8h" path="res://Textures/Rock/rocky_heightmap.png" id="4_j55oh"]
-[ext_resource type="Texture2D" uid="uid://ck24i82wlyije" path="res://Textures/Rock/rocky_normal.png" id="5_5tcfe"]
-[ext_resource type="Texture2D" uid="uid://dogb4hoeovlh" path="res://Textures/Rock/rocky_orm.png" id="6_oomas"]
+[ext_resource type="Texture2D" uid="uid://gwwslykvfvgr" path="res://Textures/dirt mat/dirt_albedo.png" id="2_u3y00"]
+[ext_resource type="Texture2D" uid="uid://b67pws4ka3q43" path="res://Textures/dirt mat/dirt_heightmap.png" id="3_ppuoc"]
+[ext_resource type="Texture2D" uid="uid://c5d4817vj5bcb" path="res://Textures/dirt mat/dirt_normal.png" id="4_awusb"]
+[ext_resource type="Texture2D" uid="uid://uu28h0uof7jq" path="res://Textures/dirt mat/dirt_orm.png" id="5_2dtnf"]
+[ext_resource type="Texture2D" uid="uid://cbjawpt2uhfyv" path="res://Textures/grass mat/grass_albedo.png" id="6_bihax"]
+[ext_resource type="Texture2D" uid="uid://biwyp72d7hikb" path="res://Textures/grass mat/grass_normal.png" id="7_5ov40"]
+[ext_resource type="Texture2D" uid="uid://buf6fcf34g43o" path="res://Textures/stone mat/stone_albedo.png" id="8_v7uak"]
+[ext_resource type="Texture2D" uid="uid://bs10do3kuh54k" path="res://Textures/stone mat/stone_heightmap.png" id="9_wb1vs"]
+[ext_resource type="Texture2D" uid="uid://c64kd14mbbwsx" path="res://Textures/stone mat/stone_normal.png" id="10_up7mv"]
+[ext_resource type="Texture2D" uid="uid://ddqrbajdai0w8" path="res://Textures/stone mat/stone_orm.png" id="11_njwde"]
+[ext_resource type="Texture2D" uid="uid://c2lp8gpxm0nxq" path="res://Textures/cliff mat/cliff_albedo.png" id="12_prpjy"]
+[ext_resource type="Texture2D" uid="uid://caqqmnt18e23y" path="res://Textures/cliff mat/cliff_heightmap.png" id="13_o6xpd"]
+[ext_resource type="Texture2D" uid="uid://y2r4xaxvhhmo" path="res://Textures/cliff mat/cliff_normal.png" id="14_xmtb0"]
+[ext_resource type="Texture2D" uid="uid://c13m0qyyyytw1" path="res://Textures/cliff mat/cliff_orm.png" id="15_s0lgw"]
+[ext_resource type="Texture2D" uid="uid://ckem2sgg2fttn" path="res://Textures/sand mat/sand_albedo.png" id="16_rfk83"]
+[ext_resource type="Texture2D" uid="uid://kl4vbvt17c5u" path="res://Textures/sand mat/sand_heightmap.png" id="17_sjlwo"]
+[ext_resource type="Texture2D" uid="uid://lbxyd2gvuior" path="res://Textures/sand mat/sand_normal.png" id="18_aot34"]
+[ext_resource type="Texture2D" uid="uid://bhf6ddocdcswp" path="res://Textures/sand mat/sand_orm.png" id="19_bqo6e"]
 
 [resource]
 render_priority = 0
 shader = ExtResource("1_opkci")
-shader_parameter/rock_albedo = ExtResource("2_44ygg")
-shader_parameter/rock_orm = ExtResource("6_oomas")
-shader_parameter/rock_normal = ExtResource("5_5tcfe")
-shader_parameter/rock_heightmap = ExtResource("4_j55oh")
-shader_parameter/rock_emission = ExtResource("3_dtyqj")
-shader_parameter/rock_scale = 0.1
-shader_parameter/heightmap_scale = 0.7
+shader_parameter/rock_albedo = ExtResource("12_prpjy")
+shader_parameter/rock_normal = ExtResource("14_xmtb0")
+shader_parameter/rock_orm = ExtResource("15_s0lgw")
+shader_parameter/rock_heightmap = ExtResource("13_o6xpd")
+shader_parameter/rock_scale = 0.07
+shader_parameter/rock_height_scale = 1.0
+shader_parameter/rock_normal_scale = 1.0
+shader_parameter/pebble_albedo = ExtResource("8_v7uak")
+shader_parameter/pebble_normal = ExtResource("10_up7mv")
+shader_parameter/pebble_orm = ExtResource("11_njwde")
+shader_parameter/pebble_heightmap = ExtResource("9_wb1vs")
+shader_parameter/pebble_scale = 0.2
+shader_parameter/pebble_height_scale = 0.5
+shader_parameter/pebble_normal_scale = 1.0
+shader_parameter/grass_albedo = ExtResource("6_bihax")
+shader_parameter/grass_normal = ExtResource("7_5ov40")
+shader_parameter/grass_scale = 0.09
+shader_parameter/grass_height_scale = 0.3
+shader_parameter/grass_normal_scale = 1.0
+shader_parameter/dirt_albedo = ExtResource("2_u3y00")
+shader_parameter/dirt_normal = ExtResource("4_awusb")
+shader_parameter/dirt_orm = ExtResource("5_2dtnf")
+shader_parameter/dirt_heightmap = ExtResource("3_ppuoc")
+shader_parameter/dirt_scale = 0.2
+shader_parameter/dirt_height_scale = 0.4
+shader_parameter/dirt_normal_scale = 1.0
+shader_parameter/sand_albedo = ExtResource("16_rfk83")
+shader_parameter/sand_normal = ExtResource("18_aot34")
+shader_parameter/sand_orm = ExtResource("19_bqo6e")
+shader_parameter/sand_heightmap = ExtResource("17_sjlwo")
+shader_parameter/sand_scale = 0.2
+shader_parameter/sand_height_scale = 0.2
+shader_parameter/sand_normal_scale = 1.0
+shader_parameter/global_brightness = 1.2
+shader_parameter/biome_tint_strength = 0.0
 shader_parameter/invert_height = false
-shader_parameter/normal_scale = 1.0
-shader_parameter/dirt_color = Color(0.4, 0.25, 0.15, 1)
 shader_parameter/snow_color = Color(0.9, 0.95, 1, 1)
-shader_parameter/rock_slope_threshold = 0.3
-shader_parameter/blend_amount = 0.08

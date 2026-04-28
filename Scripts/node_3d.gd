@@ -19,7 +19,7 @@ var chunks_building: int = 0
 var frame_counter = 0
 
 func _ready():
-	# Створюємо інтерфейс для FPS та висоти
+	_ensure_safe_spawn()
 	var canvas = CanvasLayer.new()
 	debug_label = Label.new()
 	debug_label.position = Vector2(20, 20)
@@ -36,6 +36,17 @@ func _ready():
 		player.global_position = Vector3(0, 800.0, 0) 
 		current_player_chunk = Vector2.ZERO
 		update_chunks()
+
+func _ensure_safe_spawn():
+	var max_attempts = 100
+	
+	# Перевіряємо висоту в точці спавну гравця. 
+	# < 0.38 — це вода і пляжі. Ми хочемо тверду землю.
+	while Global.get_raw_elevation(Global.world_offset.x, Global.world_offset.y) < 0.38 and max_attempts > 0:
+		# Якщо ми у воді, "прокручуємо" світ на 500 метрів убік
+		Global.world_offset.x += 500.0 
+		Global.world_offset.y += 500.0
+		max_attempts -= 1
 
 func _find_valid_spawn_point():
 	if Global.custom_spawn_x != -999999.0:
@@ -128,10 +139,13 @@ func _check_lods_continuously():
 	lod_update_queue.sort_custom(func(a, b): return a.chunk_pos.distance_to(current_player_chunk) < b.chunk_pos.distance_to(current_player_chunk))
 
 func get_lod_for_distance(dist: float) -> Dictionary:
-	if dist <= 3.5: return {"res": 50, "grass": true, "col": true}   # Висока якість + фізика
-	if dist <= 6.0: return {"res": 25, "grass": true, "col": true}   # Середня якість + фізика
-	if dist <= 12.0: return {"res": 12, "grass": false, "col": false} # Тільки графіка
-	return {"res": 4, "grass": false, "col": false}                  # Далекий обрій              
+	# 64 вершин цілком достатньо, всю магію об'єму тепер робить шейдер!
+	if dist <= 1.5: return {"res": 64, "grass": true, "col": true} 
+	
+	if dist <= 3.5: return {"res": 32, "grass": true, "col": true}   
+	if dist <= 6.0: return {"res": 16, "grass": true, "col": true}   
+	if dist <= 12.0: return {"res": 8, "grass": false, "col": false}
+	return {"res": 4, "grass": false, "col": false}
 
 func update_chunks():
 	if not player: return

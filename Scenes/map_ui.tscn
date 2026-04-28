@@ -1,7 +1,10 @@
 [gd_scene format=3 uid="uid://dj32w4116jqry"]
 
+[ext_resource type="Script" uid="uid://dg4avrx3673pm" path="res://Scripts/map_ui.gd" id="1_w7opd"]
+
 [node name="MapUI" type="CanvasLayer" unique_id=1628385544]
 layer = 100
+script = ExtResource("1_w7opd")
 
 [node name="Panel" type="Panel" parent="." unique_id=786449048]
 self_modulate = Color(0, 0, 0, 0.7058824)

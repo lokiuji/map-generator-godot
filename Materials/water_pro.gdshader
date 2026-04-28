@@ -42,12 +42,16 @@ void vertex() {
 	// Зчитуємо маску біомів (1.0 = Океан, 0.0 = Берег/Озеро)
 	float wave_mask = COLOR.r;
 	
-	// Фізично піднімаємо полігони води (Генерація хвиль)
-	float height = texture(wave, world_pos.xz / noise_scale + TIME * time_scale).r;
+	// === ЗБЕРЕЖЕНО ОПТИМІЗАЦІЮ (LOD) ===
+	float dist = distance(CAMERA_POSITION_WORLD, world_pos);
+	float wave_lod = smoothstep(80.0, 30.0, dist);
 	
-	// МНОЖИМО НА МАСКУ! 
-	// Тепер на березі (де mask = 0.0) висота хвиль дорівнюватиме 0. Вода буде ідеально рівною.
-	VERTEX.y += height * height_scale * wave_mask;
+	// Фізично піднімаємо полігони води тільки поруч із гравцем
+	if (wave_lod > 0.01) {
+		float height = texture(wave, world_pos.xz / noise_scale + TIME * time_scale).r;
+		// Множимо на вашу маску та на коефіцієнт віддалення
+		VERTEX.y += height * height_scale * wave_mask * wave_lod;
+	}
 }
 
 void fragment() {
@@ -64,17 +68,18 @@ void fragment() {
 	float depth_blend_power = clamp(pow(depth_blend, 2.5), 0.0, 1.0);
 
 	vec3 screen_color = mix(color_shallow, color_deep, depth_blend_power);
-	
+
 	// === 3. ДВІ КАРТИ НОРМАЛЕЙ (Схрещені хвилі) ===
-	vec2 time = (TIME * wave_direction) * time_scale; 
+	vec2 time = (TIME * wave_direction) * time_scale;
 	vec2 time2 = (TIME * wave_direction2) * time_scale; 
-	// Додав * 0.05, щоб дрібні текстури не розтягувались на весь світ
+	
+	// Додано * 0.05, щоб дрібні текстури не розтягувались на весь світ
 	vec3 normal_blend = mix(
 		texture(texture_normal, world_pos.xz * 0.05 + time).rgb, 
 		texture(texture_normal2, world_pos.xz * 0.05 + time2).rgb, 
 		0.5
 	);
-	
+
 	// === 4. ФРЕНЕЛЬ ТА ПІНА ===
 	float fres = fresnel(5.0, NORMAL, VIEW);
 	vec3 surface_color = mix(albedo, albedo2, fres);
@@ -82,12 +87,17 @@ void fragment() {
 	float z_depth = edge_scale - depth_blend;
 	float z_foam = step(z_depth, 0.0);
 	vec3 depth_color_adj = mix(edge_color, screen_color, z_foam);
-	
+
 	// === ФІНАЛЬНИЙ ВИВІД ===
 	ALBEDO = clamp(surface_color + depth_color_adj, vec3(0.0), vec3(1.0));
 	METALLIC = metallic;
 	ROUGHNESS = roughness;
-	NORMAL_MAP = normal_blend;
+	
+	// === ЗБЕРЕЖЕНО ОПТИМІЗАЦІЮ (LOD) ===
+	// Вимикаємо малювання нормалей хвиль далеко на горизонті
+	float dist = distance(CAMERA_POSITION_WORLD, world_pos);
+	float normal_fade = smoothstep(150.0, 50.0, dist);
+	NORMAL_MAP = mix(vec3(0.5, 0.5, 1.0), normal_blend, normal_fade); // vec3(0.5, 0.5, 1.0) - це "плоска" нормаль
 	
 	// РОБИМО ПРОЗОРІСТЬ: На мілині вода прозора (0.4), на глибині густа (0.95)
 	ALPHA = mix(0.4, 0.95, depth_blend_power);
