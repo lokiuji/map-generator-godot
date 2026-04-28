@@ -1,18 +1,24 @@
 [gd_resource type="ShaderMaterial" format=3 uid="uid://d28jla4t4xqs3"]
 
 [ext_resource type="Shader" uid="uid://r00iywomgugq" path="res://Materials/terrain_pro.gdshader" id="1_opkci"]
+[ext_resource type="Texture2D" uid="uid://n0mqiex1j3dl" path="res://Textures/Rock/rocky_albedo.png" id="2_44ygg"]
+[ext_resource type="Texture2D" uid="uid://7j16mlg4h7i1" path="res://Textures/Rock/rocky_emission.png" id="3_dtyqj"]
+[ext_resource type="Texture2D" uid="uid://y8w7128qfo8h" path="res://Textures/Rock/rocky_heightmap.png" id="4_j55oh"]
+[ext_resource type="Texture2D" uid="uid://ck24i82wlyije" path="res://Textures/Rock/rocky_normal.png" id="5_5tcfe"]
+[ext_resource type="Texture2D" uid="uid://dogb4hoeovlh" path="res://Textures/Rock/rocky_orm.png" id="6_oomas"]
 
 [resource]
 render_priority = 0
 shader = ExtResource("1_opkci")
-shader_parameter/rock_color_dark = Color(0.05, 0.05, 0.07, 1)
-shader_parameter/rock_color_light = Color(0.38, 0.4, 0.42, 1)
-shader_parameter/rock_macro_scale = 0.09
-shader_parameter/macro_crack_depth = 1.0
-shader_parameter/rock_micro_scale = 0.5
-shader_parameter/micro_crack_depth = 0.1
+shader_parameter/rock_albedo = ExtResource("2_44ygg")
+shader_parameter/rock_orm = ExtResource("6_oomas")
+shader_parameter/rock_normal = ExtResource("5_5tcfe")
+shader_parameter/rock_heightmap = ExtResource("4_j55oh")
+shader_parameter/rock_emission = ExtResource("3_dtyqj")
+shader_parameter/rock_scale = 0.1
+shader_parameter/heightmap_scale = 10.5
+shader_parameter/normal_scale = 1.0
 shader_parameter/dirt_color = Color(0.4, 0.25, 0.15, 1)
 shader_parameter/snow_color = Color(0.9, 0.95, 1, 1)
-shader_parameter/dirt_slope_threshold = 0.35
 shader_parameter/rock_slope_threshold = 0.3
 shader_parameter/blend_amount = 0.08
