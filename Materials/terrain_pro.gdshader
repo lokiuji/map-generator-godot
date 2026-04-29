@@ -65,6 +65,7 @@ uniform float sand_normal_scale = 1.0;
 // 🗂️ КАТЕГОРІЯ 6: ГЛОБАЛЬНІ НАЛАШТУВАННЯ
 // ==========================================
 group_uniforms Global_Settings;
+uniform float water_level = 4.8; // Рівень вашої води
 uniform float global_brightness : hint_range(0.5, 3.0, 0.1) = 1.2;
 uniform float biome_tint_strength : hint_range(0.0, 2.0, 0.05) = 0.8;
 uniform bool invert_height = false; 
@@ -99,9 +100,7 @@ float get_outcropping_mask(vec2 pos) {
 	return v; 
 }
 
-// ==========================================
-// ІДЕАЛЬНА ПОСЛІДОВНІСТЬ КІЛЕЦЬ
-// ==========================================
+// --- ЖОРСТКІ МАСКИ ТА ГАРАНТОВАНИЙ ПІСОК ---
 void get_material_weights(vec3 w_pos, vec3 w_norm, out float cliff, out float pebble, out float sand, out float dirt, out float grass) {
 	float steepness = 1.0 - dot(w_norm, vec3(0.0, 1.0, 0.0));
 	float outcropping = get_outcropping_mask(w_pos.xz);
@@ -118,10 +117,11 @@ void get_material_weights(vec3 w_pos, vec3 w_norm, out float cliff, out float pe
 	float dirt_noise = smoothstep(0.55, 0.56, outcropping);
 	float total_dirt = clamp(dirt_steep + dirt_noise, 0.0, 1.0);
 	
-	// ВИПРАВЛЕНО: Пісок тепер має велику і гарантовану площу (до Y=7.5)
-	float sand_area = 1.0 - smoothstep(4.8, 7.5, w_pos.y);
+	// Пісок покриває дно (нижче рівня води) та утворює пляж на 1 метр вище
+	float base_sand_mask = 1.0 - smoothstep(water_level, water_level + 1.0, w_pos.y);
 
-	sand   = clamp(sand_area, 0.0, 1.0);
+	// Жорсткі пріоритети (Пісок найголовніший)
+	sand   = clamp(base_sand_mask, 0.0, 1.0);
 	cliff  = clamp(cliff - sand, 0.0, 1.0); 
 	pebble = clamp(total_pebble - cliff - sand, 0.0, 1.0);
 	dirt   = clamp(total_dirt - cliff - sand - pebble, 0.0, 1.0);
@@ -175,11 +175,13 @@ void fragment() {
 	w = pow(w, vec3(8.0));
 	vec3 tri_w = w / (w.x + w.y + w.z);
 
+	// Трипланарні скелі
 	vec2 r_x = w_pos.zy * rock_scale; vec2 r_y = w_pos.xz * rock_scale; vec2 r_z = w_pos.xy * rock_scale;
 	vec3 cliff_alb = texture(rock_albedo, r_x).rgb * tri_w.x + texture(rock_albedo, r_y).rgb * tri_w.y + texture(rock_albedo, r_z).rgb * tri_w.z;
 	vec3 cliff_nrm = texture(rock_normal, r_x).rgb * tri_w.x + texture(rock_normal, r_y).rgb * tri_w.y + texture(rock_normal, r_z).rgb * tri_w.z;
 	vec3 cliff_orm = texture(rock_orm, r_x).rgb * tri_w.x + texture(rock_orm, r_y).rgb * tri_w.y + texture(rock_orm, r_z).rgb * tri_w.z;
 
+	// Рівнинні текстури
 	vec2 p_uv = w_pos.xz * pebble_scale;
 	vec3 p_alb = texture(pebble_albedo, p_uv).rgb;
 	vec3 p_nrm = texture(pebble_normal, p_uv).rgb;
@@ -200,18 +202,22 @@ void fragment() {
 	vec3 s_nrm = texture(sand_normal, s_uv).rgb;
 	vec3 s_orm_tex = texture(sand_orm, s_uv).rgb;
 
+	// Тонування біомом
 	vec3 tint = mix(vec3(1.0), COLOR.rgb, biome_tint_strength);
 	p_alb *= tint;
 	g_alb *= tint;
 	d_alb *= tint;
 	s_alb *= tint;
 
+	// Змішування
 	vec3 final_albedo = cliff_alb * w_cliff + p_alb * w_pebble + g_alb * w_grass + d_alb * w_dirt + s_alb * w_sand;
 	vec3 final_normal = cliff_nrm * w_cliff + p_nrm * w_pebble + g_nrm * w_grass + d_nrm * w_dirt + s_nrm * w_sand;
 	vec3 final_orm    = cliff_orm * w_cliff + p_orm_tex * w_pebble + g_orm_tex * w_grass + d_orm_tex * w_dirt + s_orm_tex * w_sand;
 
+	// Сніг на вершинах
 	final_albedo = mix(final_albedo, snow_color, COLOR.a);
 
+	// Фінальний вивід (Матова поверхня)
 	ALBEDO = clamp(final_albedo * global_brightness, 0.0, 1.0);
 
 	float normal_fade = smoothstep(150.0, 50.0, dist); 
@@ -219,8 +225,8 @@ void fragment() {
 	vec3 normal_offset = (final_normal * 2.0 - 1.0) * current_normal_scale * normal_fade;
 	NORMAL = (VIEW_MATRIX * vec4(normalize(w_norm + normal_offset), 0.0)).xyz;
 	
-	SPECULAR = 0.02; 
+	SPECULAR = 0.02; // Жодних відблисків неба
 	AO = final_orm.r; 
-	ROUGHNESS = clamp(final_orm.g, 0.75, 1.0); 
+	ROUGHNESS = clamp(final_orm.g, 0.75, 1.0); // Матова суха поверхня
 	METALLIC = 0.0; 
 }
