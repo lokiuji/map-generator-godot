@@ -19,6 +19,10 @@ config/icon="uid://1ewn3xdhpjyi"
 
 Global="*res://Scripts/global.gd"
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/tessarakkt.oceanfft/plugin.cfg")
+
 [input]
 
 ui_map={

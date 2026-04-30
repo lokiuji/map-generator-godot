@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://4rn6ihk35fal"
+path="res://.godot/imported/FFTVertical.glsl-f2bdb005146c9f7c68b38ecdb2ab83c0.res"
+
+[deps]
+
+source_file="res://Addons/tessarakkt.oceanfft/shaders/FFTVertical.glsl"
+dest_files=["res://.godot/imported/FFTVertical.glsl-f2bdb005146c9f7c68b38ecdb2ab83c0.res"]
+
+[params]
+

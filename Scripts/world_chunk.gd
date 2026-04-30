@@ -157,30 +157,30 @@ func _build_terrain_data_in_thread():
 		col_shape = ConcavePolygonShape3D.new()
 		col_shape.set_faces(final_mesh.get_faces())
 	
-	var water_data = null
-	if needs_water and resolution > 4:
-		var w_st = SurfaceTool.new()
-		w_st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		for wz in range(11):
-			if is_cancelled: return
-			for wx in range(11):
-				var local_wx = wx * (chunk_size/10.0) - (chunk_size / 2.0)
-				var local_wz = wz * (chunk_size/10.0) - (chunk_size / 2.0)
-				var depth = Global._get_final_height(offset_x + local_wx + chunk_world_offset.x, offset_z + local_wz + chunk_world_offset.y)
-				w_st.set_color(Color(smoothstep(5.0, -10.0, depth), 0, 0))
-				w_st.set_uv(Vector2(float(wx) / 10.0, float(wz) / 10.0))
-				w_st.add_vertex(Vector3(local_wx, 4.8, local_wz))
-		for wz in range(10):
-			for wx in range(10):
-				var w_i = wx + wz * 11
-				w_st.add_index(w_i); w_st.add_index(w_i + 1); w_st.add_index(w_i + 11)
-				w_st.add_index(w_i + 1); w_st.add_index(w_i + 12); w_st.add_index(w_i + 11)
-		w_st.generate_normals()
-		w_st.generate_tangents()
-		water_data = w_st.commit()
+	#var water_data = null
+	#if needs_water and resolution > 4:
+		#var w_st = SurfaceTool.new()
+		#w_st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		#for wz in range(11):
+			#if is_cancelled: return
+			#for wx in range(11):
+				#var local_wx = wx * (chunk_size/10.0) - (chunk_size / 2.0)
+				#var local_wz = wz * (chunk_size/10.0) - (chunk_size / 2.0)
+				#var depth = Global._get_final_height(offset_x + local_wx + chunk_world_offset.x, offset_z + local_wz + chunk_world_offset.y)
+				#w_st.set_color(Color(smoothstep(5.0, -10.0, depth), 0, 0))
+				#w_st.set_uv(Vector2(float(wx) / 10.0, float(wz) / 10.0))
+				#w_st.add_vertex(Vector3(local_wx, 4.8, local_wz))
+		#for wz in range(10):
+			#for wx in range(10):
+				#var w_i = wx + wz * 11
+				#w_st.add_index(w_i); w_st.add_index(w_i + 1); w_st.add_index(w_i + 11)
+				#w_st.add_index(w_i + 1); w_st.add_index(w_i + 12); w_st.add_index(w_i + 11)
+		#w_st.generate_normals()
+		#w_st.generate_tangents()
+		#water_data = w_st.commit()
 
 	if not is_cancelled:
-		call_deferred("_on_thread_finished", {"mesh": final_mesh, "shape": col_shape, "grass": grass_data, "water": water_data})
+		call_deferred("_on_thread_finished", {"mesh": final_mesh, "shape": col_shape, "grass": grass_data})
 
 func _on_thread_finished(data: Dictionary):
 	if task_id != -1: 
@@ -222,20 +222,18 @@ func _on_thread_finished(data: Dictionary):
 			
 		add_child(new_mmi)
 		
-	var new_water = null
-	if data["water"]:
-		new_water = MeshInstance3D.new()
-		new_water.mesh = data["water"]
-		new_water.material_override = load("res://Materials/water_mat.tres")
-		add_child(new_water)
+	#var new_water = null
+	#if data["water"]:
+		#new_water = MeshInstance3D.new()
+		#new_water.mesh = data["water"]
+		#new_water.material_override = load("res://Materials/water_mat.tres")
+		#add_child(new_water)
 		
 	if s_body_ref: s_body_ref.queue_free()
 	if mmi: mmi.queue_free()
-	if water_ref: water_ref.queue_free()
 	
 	s_body_ref = new_s_body
 	mmi = new_mmi
-	water_ref = new_water
 	
 	is_ready = true
 	chunk_ready.emit(self)
