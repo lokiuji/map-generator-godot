@@ -24,3 +24,4 @@ shader_parameter/fade_end = 150.0
 shader_parameter/terrain_uv_scale = 0.2
 shader_parameter/biome_tint_strength = 0.8
 shader_parameter/global_brightness = 1.2
+shader_parameter/water_level = 4.8

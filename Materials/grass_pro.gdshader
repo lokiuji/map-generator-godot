@@ -17,8 +17,9 @@ uniform float fade_end = 150.0;
 group_uniforms Terrain_Sync;
 uniform float terrain_uv_scale = 0.2;
 uniform float biome_tint_strength = 0.8;
-// ДОДАНО СИНХРОНІЗАЦІЮ ЯСКРАВОСТІ
 uniform float global_brightness : hint_range(0.5, 3.0, 0.1) = 1.2; 
+// 1. ДОДАЛИ РІВЕНЬ ВОДИ
+uniform float water_level = 4.8; 
 
 varying float wind_val;
 varying vec3 world_pos_var;
@@ -64,7 +65,7 @@ void get_material_weights(vec3 w_pos, vec3 w_norm, out float cliff, out float pe
 	float dirt_noise = smoothstep(0.55, 0.56, outcropping);
 	float total_dirt = clamp(dirt_steep + dirt_noise, 0.0, 1.0);
 	
-	float sand_area = 1.0 - smoothstep(4.8, 7.5, w_pos.y);
+	float sand_area = 1.0 - smoothstep(water_level - 1.0, water_level + 4.0, w_pos.y);
 
 	sand   = clamp(sand_area, 0.0, 1.0);
 	cliff  = clamp(cliff - sand, 0.0, 1.0); 
@@ -90,6 +91,12 @@ void vertex() {
 	
 	VERTEX *= lod_scale * pop_scale; 
 
+	// 2. ЖОРСТКА ПЕРЕВІРКА ВОДИ ТУТ
+	// Якщо трава нижча за воду — стискаємо її у крапку.
+	if (world_pos_var.y < water_level) {
+		VERTEX = vec3(0.0);
+	}
+
 	vec2 noise_uv = (world_pos_var.xz * 0.02) + (vec2(1.0, 0.5) * TIME * wind_speed);
 	wind_val = texture(wind_noise, noise_uv).r;
 	
@@ -99,7 +106,8 @@ void vertex() {
 }
 
 void fragment() {
-	if (v_grass_mask < 0.01) discard; 
+	// Додатково відсікаємо рендеринг під водою для 100% гарантії
+	if (v_grass_mask < 0.01 || world_pos_var.y < water_level) discard; 
 
 	vec4 tex = texture(alpha_texture, UV);
 	ALPHA = tex.a;
@@ -112,13 +120,11 @@ void fragment() {
 	vec3 actual_ground_color = ground_tex_color * tint;
 	
 	float tip_mask = pow(1.0 - UV.y, 2.0);
-	// Трава стартує від 110% кольору землі біля коріння до 150% на кінчиках
 	vec3 base_color = mix(actual_ground_color * 1.1, actual_ground_color * 1.5, tip_mask);
 	
 	float wind_shimmer = wind_val * wind_brightness_mult * tip_mask;
 	vec3 final_color = base_color + (vec3(1.0) * wind_shimmer);
 	
-	// ВИПРАВЛЕННЯ: Тепер трава теж отримує множник Global Brightness
 	ALBEDO = clamp(final_color * global_brightness, vec3(0.0), vec3(1.0));
 	ROUGHNESS = 0.8;
 	SPECULAR = 0.0; 

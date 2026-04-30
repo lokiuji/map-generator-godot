@@ -2,23 +2,13 @@
 
 [ext_resource type="Shader" uid="uid://kvcv042k74fk" path="res://Materials/water_pro.gdshader" id="1_t63lw"]
 
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_t63lw"]
-frequency = 0.0263
-
-[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_nsqrp"]
-noise = SubResource("FastNoiseLite_t63lw")
-seamless = true
-
 [resource]
 render_priority = 0
 shader = ExtResource("1_t63lw")
-shader_parameter/water_level = 4.8
 shader_parameter/col_lake = Color(0.05, 0.6, 0.85, 1)
 shader_parameter/col_ocean = Color(0.01, 0.1, 0.3, 1)
 shader_parameter/foam_color = Color(1, 1, 1, 1)
 shader_parameter/toon_dark = Color(0, 0.1, 0.2, 1)
-shader_parameter/noise_texture = SubResource("NoiseTexture2D_nsqrp")
-shader_parameter/wave_speed = 0.005
-shader_parameter/wave_scale = 0.007
-shader_parameter/wave_height_total = 1.0
-shader_parameter/surface_foam_threshold = 0.6
+shader_parameter/global_wave_speed = 0.6
+shader_parameter/global_wave_height = 0.1
+shader_parameter/global_peak_sharpness = 0.6
