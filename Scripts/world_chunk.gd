@@ -138,7 +138,7 @@ func _build_terrain_data_in_thread():
 			var py = Global._get_final_height(wx, wz)
 			var b_data = Global.get_biome_data(wx, wz)
 			
-			if py > 4.5 and b_data["is_grassy"]:
+			if py >= 5.3 and b_data["is_grassy"]:
 				var norm = _get_normal(wx, wz)
 				if norm.dot(Vector3.UP) > 0.85:
 					var g_pos = Vector3(lx, py - 0.1, lz)
@@ -167,7 +167,9 @@ func _build_terrain_data_in_thread():
 				var local_wx = wx * (chunk_size/10.0) - (chunk_size / 2.0)
 				var local_wz = wz * (chunk_size/10.0) - (chunk_size / 2.0)
 				var depth = Global._get_final_height(offset_x + local_wx + chunk_world_offset.x, offset_z + local_wz + chunk_world_offset.y)
-				w_st.set_color(Color(smoothstep(5.0, -10.0, depth), 0, 0))
+				 #Вираховуємо точну глибину в метрах. 0.0 = берег, 15.0 = глибокий океан
+				var actual_water_depth = 4.8 - depth
+				w_st.set_color(Color(clamp(actual_water_depth / 15.0, 0.0, 1.0), 0.0, 0.0))
 				w_st.set_uv(Vector2(float(wx) / 10.0, float(wz) / 10.0))
 				w_st.add_vertex(Vector3(local_wx, 4.8, local_wz))
 		for wz in range(10):
