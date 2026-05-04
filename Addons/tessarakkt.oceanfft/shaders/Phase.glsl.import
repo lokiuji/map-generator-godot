@@ -3,12 +3,12 @@
 importer="glsl"
 type="RDShaderFile"
 uid="uid://2bgdnitk3d1m"
-path="res://.godot/imported/Phase.glsl-d4771a85a72a1b47e01b3b0146670d26.res"
+path="res://.godot/imported/Phase.glsl-041b1927e282ae5bbfa319841cad637b.res"
 
 [deps]
 
-source_file="res://Addons/tessarakkt.oceanfft/shaders/Phase.glsl"
-dest_files=["res://.godot/imported/Phase.glsl-d4771a85a72a1b47e01b3b0146670d26.res"]
+source_file="res://addons/tessarakkt.oceanfft/shaders/Phase.glsl"
+dest_files=["res://.godot/imported/Phase.glsl-041b1927e282ae5bbfa319841cad637b.res"]
 
 [params]
 

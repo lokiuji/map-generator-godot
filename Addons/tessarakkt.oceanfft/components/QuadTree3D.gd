@@ -93,9 +93,11 @@ func _ready() -> void:
 	mesh_instance.visible = false
 	mesh_instance.mesh = lod_meshes[lod_level]
 	mesh_instance.material_override = material
-	mesh_instance.set_instance_shader_parameter("patch_size", quad_size)
-	mesh_instance.set_instance_shader_parameter("min_lod_morph_distance", ranges[lod_level] * 2 * (1.0 - morph_range))
-	mesh_instance.set_instance_shader_parameter("max_lod_morph_distance", ranges[lod_level] * 2)
+	
+	# Використовуємо call_deferred, щоб уникнути крашу C++ бекенду Godot
+	#mesh_instance.call_deferred("set_instance_shader_parameter", "patch_size", quad_size)
+	#mesh_instance.call_deferred("set_instance_shader_parameter", "min_lod_morph_distance", ranges[lod_level] * 2 * (1.0 - morph_range))
+	#mesh_instance.call_deferred("set_instance_shader_parameter", "max_lod_morph_distance", ranges[lod_level] * 2)
 	
 	_visibility_detector.aabb = AABB(Vector3(-quad_size * 0.75, -quad_size * 0.5, -quad_size * 0.75),
 			Vector3(quad_size * 1.5, quad_size, quad_size * 1.5))
