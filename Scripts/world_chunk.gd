@@ -45,6 +45,13 @@ func start_generation(pos: Vector2, size: float, res: int, material: Material, g
 	
 	terrain_mesh_instance = MeshInstance3D.new()
 	terrain_mesh_instance.material_override = material
+	
+	# --- МАГІЯ ВІЗУАЛЬНИХ ШАРІВ ---
+	# Вмикаємо 2-й візуальний шар (Index 2), щоб камера-сканер бачила цю землю.
+	# 1-й шар (Index 1) увімкнений за замовчуванням, тому гравець теж її бачитиме.
+	terrain_mesh_instance.set_layer_mask_value(2, true) 
+	# ------------------------------
+	
 	add_child(terrain_mesh_instance)
 	task_id = WorkerThreadPool.add_task(_build_terrain_data_in_thread, true)
 

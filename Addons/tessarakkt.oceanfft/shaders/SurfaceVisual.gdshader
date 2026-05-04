@@ -4,6 +4,11 @@ render_mode world_vertex_coords, depth_draw_always, cull_disabled;
 
 #include "OceanCommon.gdshaderinc"
 
+// --- НАЛАШТУВАННЯ ЛОКАЛЬНОЇ МАПИ (Скан з камери) ---
+uniform sampler2D terrain_heightmap;
+uniform float local_map_size = 1000.0; // Size камери
+uniform float max_terrain_height = 150.0; // Має збігатися з DepthPostProcess
+uniform vec3 player_position;
 
 // Sun specular highlight
 uniform float specular_strength = 1.0;
@@ -47,9 +52,6 @@ group_uniforms Refraction;
 /******************************************************************************/
 uniform float refraction_factor_min = 0.0;
 uniform float refraction_factor_max = 0.025;
-//uniform float refraction_distance_power = 1.55;
-//uniform float refraction_distance_max = 30000.0;
-uniform float refraction_background_brightness = 0.2;
 uniform float refraction_depth_factor = 0.05; // Змінено для кращого ефекту на мілині
 
 
@@ -83,11 +85,6 @@ uniform float planetary_curve_strength = 0.000001;
 uniform float amplitude_scale_min = 0.25;
 uniform float amplitude_scale_max = 1.0;
 uniform float amplitude_scale_fade_distance = 12000.0;
-
-// --- НАЛАШТУВАННЯ БЕРЕГОВОГО ЗАТУХАННЯ ---
-uniform sampler2D terrain_heightmap : hint_default_black; // Твоя мапа шумів
-uniform float terrain_scale = 1000.0; // Масштаб шуму (має співпадати з генерацією землі)
-//uniform float terrain_max_height = 100.0; // Максимальна висота гір/землі у твоєму світі
 uniform float shore_wave_damp_distance = 5.0; // За скільки метрів до дна хвилі починають згасати
 
 uniform sampler2D depth_texture : hint_depth_texture, filter_linear_mipmap;
@@ -108,7 +105,7 @@ varying float jacobian_determinant;
 varying float wave_height;
 varying float foam_mix_factor;
 varying float foam_specular_factor;
-
+varying float v_ground_height; // Висота землі для оптимізації
 
 vec2 lod_morph(float morph_factor, vec2 grid_pos) {
 	vec2 fracPart = fract(grid_pos.xy * vertex_resolution * 0.5) * 2.0 / vertex_resolution;
@@ -128,39 +125,33 @@ void vertex() {
 	float morph_factor = (clamp(linear_dist, min_lod_morph_distance, max_lod_morph_distance) - min_lod_morph_distance) / (max_lod_morph_distance - min_lod_morph_distance);
 	VERTEX.xz -= lod_morph(morph_factor, UV);
 	
-	// СТВОРЕННЯ domain_warped_uv (Саме цього рядка тобі не вистачало)
+	// СТВОРЕННЯ domain_warped_uv
 	vec2 domain_warped_uv = domain_warp(VERTEX.xz, linear_dist);
 	
 	// Отримуємо базове зміщення хвиль
 	vec3 displacement = get_displacement(domain_warped_uv);
 	
-	// --- МАГІЯ ЗАТУХАННЯ ХВИЛЬ (Синхронізована з GDScript) ---
-	// 1. Зчитуємо базовий шум (e), який формує континенти
-	vec2 noise_uv = VERTEX.xz / terrain_scale; 
-	float e = texture(terrain_heightmap, noise_uv).r; // Це твій get_raw_elevation
+	// --- МАГІЯ ЗАТУХАННЯ ХВИЛЬ (Через локальну мапу Viewport) ---
+	// 1. Отримуємо UV на локальній мапі (камера завжди над гравцем)
+	vec2 map_uv = (VERTEX.xz - player_position.xz) / local_map_size + vec2(0.5);
 	
-	// 2. Рахуємо висоту дна за ТВОЄЮ формулою з _get_final_height
-	// Якщо e < 0.35 (це під водою), рахуємо реальне дно. 
-	// Якщо e >= 0.35 (це суша), нам байдуже на гори, просто ставимо висоту 5.0 (рівень води)
-	float ground_height = 5.0; 
-	if (e < 0.35) {
-		ground_height = 5.0 + (e - 0.35) * 40.0;
+	// 2. Зчитуємо висоту (якщо за межами мапи - дефолтна глибина -50.0)
+	v_ground_height = -50.0; 
+	if (map_uv.x >= 0.0 && map_uv.x <= 1.0 && map_uv.y >= 0.0 && map_uv.y <= 1.0) {
+		v_ground_height = texture(terrain_heightmap, map_uv).r * max_terrain_height;
 	}
 	
-	// 3. Рахуємо глибину від поверхні (вона у нас локально на 0.0, але світ глобально зміщений)
-	float water_surface_height = 5.0; // Твоя базова висота води
-	float depth_at_vertex = water_surface_height - ground_height; 
-	
-	// 4. Створюємо множник затухання.
-	// shore_wave_damp_distance - це глибина (в метрах), на якій хвиля вже має повну силу.
-	float wave_damp = smoothstep(0.0, shore_wave_damp_distance, depth_at_vertex);
-	wave_damp = max(0.15, wave_damp); 
-	
-	displacement.y *= wave_damp;
-	
-	// 5. Придавлюємо хвилі по висоті
-	displacement.y *= wave_damp;
+	// 3. ЗАТУХАННЯ ТА ОПТИМІЗАЦІЯ ВЕРШИН
+	if (v_ground_height > 5.0) {
+		displacement = vec3(0.0); // Під землею хвиль немає
+	} else {
+		float depth_at_vertex = 5.0 - v_ground_height;
+		float wave_damp = smoothstep(0.0, shore_wave_damp_distance, depth_at_vertex);
+		wave_damp = max(0.15, wave_damp); // Залишаємо мінімум 15% хвиль на березі
+		displacement.y *= wave_damp;
+	}
 	// -----------------------------
+	
 	// Застосовуємо зміщення до сітки
 	VERTEX += displacement;
 	world_vertex = VERTEX; // Зберігаємо координати для фрагментного шейдера
@@ -181,6 +172,12 @@ void vertex() {
 
 
 void fragment() {
+	// ЖОРСТКА ОПТИМІЗАЦІЯ: не малювати воду, якщо вона під землею!
+	// 5.2 дає запас у 20 см, щоб піна на самому березі не обрізалась
+	if (v_ground_height > 5.2) {
+		discard;
+	}
+	
 	// Fresnel
 	float fresnel_factor = clamp(pow(abs(1.0 - dot(NORMAL, normalize(VIEW))), fresnel_power), -1.0, 1.0);
 	float fresnel = fresnel_factor * fresnel_strength + fresnel_offset;

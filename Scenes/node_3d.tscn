@@ -4,6 +4,8 @@
 [ext_resource type="Material" uid="uid://d28jla4t4xqs3" path="res://Materials/terrain_mat.tres" id="2_a0tk4"]
 [ext_resource type="PackedScene" uid="uid://c7rp4nxgl8faa" path="res://Prefabs/player.tscn" id="2_noarx"]
 [ext_resource type="PackedScene" uid="uid://dj32w4116jqry" path="res://Scenes/map_ui.tscn" id="3_r3fl7"]
+[ext_resource type="Script" uid="uid://08x7myhteuo2" path="res://Scenes/local_map_scanner.gd" id="4_8cye3"]
+[ext_resource type="Shader" uid="uid://b01dgtnu7rr7j" path="res://Scenes/DepthPostProcess.gdshader" id="5_062e5"]
 [ext_resource type="Script" uid="uid://b450bm6b1npjb" path="res://addons/tessarakkt.oceanfft/components/OceanEnvironment.gd" id="5_ifh66"]
 [ext_resource type="Environment" uid="uid://drui1tvkk7b7q" path="res://addons/example/Environment.tres" id="5_m2rse"]
 [ext_resource type="Material" uid="uid://cmyo0unntq078" path="res://addons/tessarakkt.oceanfft/Ocean.tres" id="6_aeo3b"]
@@ -14,6 +16,15 @@
 [ext_resource type="Shader" uid="uid://bov46gyr36itq" path="res://addons/tessarakkt.oceanfft/shaders/UnderwaterParticles.gdshader" id="15_24o0o"]
 [ext_resource type="Texture2D" uid="uid://b4cb3vkqormjf" path="res://addons/tessarakkt.oceanfft/graphics/bubble_6_grayscale.png" id="16_o74xe"]
 [ext_resource type="Shader" uid="uid://c3d5ijcw5c7t1" path="res://addons/tessarakkt.oceanfft/shaders/UnderwaterPostProc.gdshader" id="17_odfm3"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_m2rse"]
+render_priority = 0
+shader = ExtResource("5_062e5")
+shader_parameter/cam_height = 500.0
+shader_parameter/max_terrain_height = 150.0
+
+[sub_resource type="QuadMesh" id="QuadMesh_rl1jb"]
+material = SubResource("ShaderMaterial_m2rse")
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_18r8k"]
 noise_type = 3
@@ -159,6 +170,7 @@ terrain_material = ExtResource("2_a0tk4")
 transform = Transform3D(1.0000001, 1.4551915e-11, -9.313226e-10, 0, 1.0000001, 0, 0, 0, 1.0000001, 3000, 400, 3000)
 
 [node name="LocalMapScanner" type="Node3D" parent="Player" unique_id=1845946005]
+script = ExtResource("4_8cye3")
 
 [node name="HeightmapViewport" type="SubViewport" parent="Player/LocalMapScanner" unique_id=733429157]
 transparent_bg = true
@@ -173,11 +185,9 @@ size = 1000.0
 near = 0.1
 far = 1000.0
 
-[node name="CanvasLayer" type="CanvasLayer" parent="Player/LocalMapScanner/HeightmapViewport/MapCamera" unique_id=1899832426]
-
-[node name="ColorRect" type="ColorRect" parent="Player/LocalMapScanner/HeightmapViewport/MapCamera/CanvasLayer" unique_id=1507601156]
-offset_right = 40.0
-offset_bottom = 40.0
+[node name="DepthPostProcess" type="MeshInstance3D" parent="Player/LocalMapScanner/HeightmapViewport/MapCamera" unique_id=906291194]
+extra_cull_margin = 10000.0
+mesh = SubResource("QuadMesh_rl1jb")
 
 [node name="MapUI" parent="." unique_id=1628385544 instance=ExtResource("3_r3fl7")]
 
