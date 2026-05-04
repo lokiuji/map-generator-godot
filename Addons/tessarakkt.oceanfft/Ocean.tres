@@ -24,6 +24,8 @@ height = 2048
 noise = SubResource("FastNoiseLite_gub2d")
 seamless = true
 
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_aftje"]
+
 [resource]
 render_priority = 0
 shader = ExtResource("1_56q88")
@@ -41,6 +43,9 @@ shader_parameter/planetary_curve_strength = 1e-06
 shader_parameter/amplitude_scale_min = 0.25
 shader_parameter/amplitude_scale_max = 1.0
 shader_parameter/amplitude_scale_fade_distance = 12000.0
+shader_parameter/terrain_heightmap = SubResource("NoiseTexture2D_aftje")
+shader_parameter/terrain_scale = 1000.0
+shader_parameter/shore_wave_damp_distance = 5.0
 shader_parameter/patch_size = 512.0
 shader_parameter/min_lod_morph_distance = 100.0
 shader_parameter/max_lod_morph_distance = 2000.0
@@ -49,6 +54,11 @@ shader_parameter/specular_power = 1500.0
 shader_parameter/view_fade_start = 0.95
 shader_parameter/deep_color = Color(0.004, 0.016, 0.047, 1)
 shader_parameter/shallow_color = Color(0, 0.729412, 0.988235, 1)
+shader_parameter/depth_blend_max = 15.0
+shader_parameter/depth_blend_power = 1.0
+shader_parameter/shoreline_foam_cutoff = 1.5
+shader_parameter/shoreline_foam_intensity = 1.5
+shader_parameter/shoreline_foam_color = Color(1, 1, 1, 1)
 shader_parameter/fresnel_offset = 0.02
 shader_parameter/fresnel_strength = 0.0
 shader_parameter/fresnel_power = 5.0
@@ -59,8 +69,6 @@ shader_parameter/pbr_specular_offset = 0.05
 shader_parameter/pbr_metallic_strength = 0.0
 shader_parameter/refraction_factor_min = 0.0
 shader_parameter/refraction_factor_max = 0.025
-shader_parameter/refraction_distance_power = 1.55
-shader_parameter/refraction_distance_max = 30000.0
 shader_parameter/refraction_background_brightness = 0.2
 shader_parameter/refraction_depth_factor = 1e-05
 shader_parameter/sss_backlight_strength = 0.0125

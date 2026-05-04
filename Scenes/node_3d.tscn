@@ -158,6 +158,27 @@ terrain_material = ExtResource("2_a0tk4")
 [node name="Player" parent="." unique_id=2116405228 groups=["player"] instance=ExtResource("2_noarx")]
 transform = Transform3D(1.0000001, 1.4551915e-11, -9.313226e-10, 0, 1.0000001, 0, 0, 0, 1.0000001, 3000, 400, 3000)
 
+[node name="LocalMapScanner" type="Node3D" parent="Player" unique_id=1845946005]
+
+[node name="HeightmapViewport" type="SubViewport" parent="Player/LocalMapScanner" unique_id=733429157]
+transparent_bg = true
+size = Vector2i(1024, 1024)
+render_target_update_mode = 4
+
+[node name="MapCamera" type="Camera3D" parent="Player/LocalMapScanner/HeightmapViewport" unique_id=149352887]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0, 0)
+cull_mask = 1047554
+projection = 1
+size = 1000.0
+near = 0.1
+far = 1000.0
+
+[node name="CanvasLayer" type="CanvasLayer" parent="Player/LocalMapScanner/HeightmapViewport/MapCamera" unique_id=1899832426]
+
+[node name="ColorRect" type="ColorRect" parent="Player/LocalMapScanner/HeightmapViewport/MapCamera/CanvasLayer" unique_id=1507601156]
+offset_right = 40.0
+offset_bottom = 40.0
+
 [node name="MapUI" parent="." unique_id=1628385544 instance=ExtResource("3_r3fl7")]
 
 [node name="OceanEnvironment" type="WorldEnvironment" parent="." unique_id=1699821373 node_paths=PackedStringArray("sun_light", "sky_light", "splash_particles", "splash_sub_particles", "underwater_particles", "underwater_post_proc")]

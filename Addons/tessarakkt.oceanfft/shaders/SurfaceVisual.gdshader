@@ -12,18 +12,23 @@ uniform float specular_power = 1500.0;
 // ALPHA will begin decreasing to 0.0 after view_distance_max * view_fade_start
 uniform float view_fade_start = 0.95;
 
-// Colors
+// Colors & Depth Blend (ОНОВЛЕНО ДЛЯ СТИЛІЗОВАНОЇ ВОДИ)
 uniform vec4 deep_color:source_color = vec4(0.004f, 0.016f, 0.047f, 1.0);
 uniform vec4 shallow_color:source_color = vec4(0, 0.729412, 0.988235, 1);
+uniform float depth_blend_max = 15.0; // На якій глибині (в метрах) вода стає повністю "deep_color"
+uniform float depth_blend_power = 2.5; // Наскільки різким є перехід кольору
+
+
+group_uniforms ShorelineFoam;
+/******************************************************************************/
+// НОВИЙ БЛОК: Налаштування піни біля берега
+uniform float shoreline_foam_cutoff = 1.5; // Як далеко від берега (за глибиною) малювати піну
+uniform float shoreline_foam_intensity = 1.5; // Насиченість берегової піни
+uniform vec4 shoreline_foam_color:source_color = vec4(1.0, 1.0, 1.0, 1.0);
 
 
 group_uniforms Fresnel;
 /******************************************************************************/
-// Note that PBR specular and metallic settings can significantly affect the
-// result of fresnel shading. Consider playing with those settings if fresnel
-// shading can't be made to look proper with just these settings.
-
-// Fresnel Shading
 uniform float fresnel_offset = 0.02;
 uniform float fresnel_strength = 0.0;
 uniform float fresnel_power = 5.0;
@@ -40,17 +45,12 @@ uniform float pbr_metallic_strength = 0.0;
 
 group_uniforms Refraction;
 /******************************************************************************/
-// TODO: Needs to be completely redone;
-
 uniform float refraction_factor_min = 0.0;
 uniform float refraction_factor_max = 0.025;
-uniform float refraction_distance_power = 1.55;
-uniform float refraction_distance_max = 30000.0;
+//uniform float refraction_distance_power = 1.55;
+//uniform float refraction_distance_max = 30000.0;
 uniform float refraction_background_brightness = 0.2;
-
-// Adjusts how strong the refraction is based on the distance between the ocean
-// pixel and the object behind it.
-uniform float refraction_depth_factor = 0.00001;
+uniform float refraction_depth_factor = 0.05; // Змінено для кращого ефекту на мілині
 
 
 group_uniforms SubSurfaceScattering;
@@ -64,10 +64,6 @@ uniform vec4 sss_color:source_color = vec4(0, 0.729412, 0.988235, 1);
 
 group_uniforms Whitecaps;
 /******************************************************************************/
-// Basic whitecap rendering using Jacobian determinant.
-// TODO: Calculate Jacobian and foam in another shader to support temporal
-//       effects like foam persisting and bubbling out.
-
 uniform float foam_jacobian_limit = 0.5;
 uniform float foam_coverage = 0.1;
 uniform float foam_mix_strength = 1.0;
@@ -78,36 +74,27 @@ uniform sampler2D foam_texture : hint_default_white;
 
 group_uniforms Internal;
 /******************************************************************************/
-// These are intended to be updated during runtime. Setting values in the editor
-// may not have the desired result.
-
-// The vertex resolution of the mesh tiles the shader is applied to.
 uniform float vertex_resolution = 256.0;
 
 
 group_uniforms Internal.WaveDeformModifiers;
 /******************************************************************************/
-// Adjust the wave displacement maps as they are applied to the surface.
-// This will be correctly accounted for by normals and whitecaps.
-// Settings will only affect buoyancy if set through Ocean3D
-
-// Simple planetary curve approximation.
-// Decrease height of surface exponentially as distance from camera increases.
 uniform float planetary_curve_strength = 0.000001;
-
-// Decreases the height of the wave deformation as distance from the camera
-// increases.
-// This occurs after surface normals and whitecap coverage has been calculated.
 uniform float amplitude_scale_min = 0.25;
 uniform float amplitude_scale_max = 1.0;
 uniform float amplitude_scale_fade_distance = 12000.0;
 
+// --- НАЛАШТУВАННЯ БЕРЕГОВОГО ЗАТУХАННЯ ---
+uniform sampler2D terrain_heightmap : hint_default_black; // Твоя мапа шумів
+uniform float terrain_scale = 1000.0; // Масштаб шуму (має співпадати з генерацією землі)
+//uniform float terrain_max_height = 100.0; // Максимальна висота гір/землі у твоєму світі
+uniform float shore_wave_damp_distance = 5.0; // За скільки метрів до дна хвилі починають згасати
 
 uniform sampler2D depth_texture : hint_depth_texture, filter_linear_mipmap;
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear_mipmap;
 
 
-// Instance Uniforms
+// Uniforms (Без instance для уникнення багу C++)
 /******************************************************************************/
 uniform float patch_size = 512.0;
 uniform float min_lod_morph_distance = 100.0;
@@ -141,14 +128,42 @@ void vertex() {
 	float morph_factor = (clamp(linear_dist, min_lod_morph_distance, max_lod_morph_distance) - min_lod_morph_distance) / (max_lod_morph_distance - min_lod_morph_distance);
 	VERTEX.xz -= lod_morph(morph_factor, UV);
 	
-	// Domain Warp
+	// СТВОРЕННЯ domain_warped_uv (Саме цього рядка тобі не вистачало)
 	vec2 domain_warped_uv = domain_warp(VERTEX.xz, linear_dist);
 	
-	// Vertex Offset
-	// Use the world vertex XZ coordinates as UV for simplicity
+	// Отримуємо базове зміщення хвиль
 	vec3 displacement = get_displacement(domain_warped_uv);
+	
+	// --- МАГІЯ ЗАТУХАННЯ ХВИЛЬ (Синхронізована з GDScript) ---
+	// 1. Зчитуємо базовий шум (e), який формує континенти
+	vec2 noise_uv = VERTEX.xz / terrain_scale; 
+	float e = texture(terrain_heightmap, noise_uv).r; // Це твій get_raw_elevation
+	
+	// 2. Рахуємо висоту дна за ТВОЄЮ формулою з _get_final_height
+	// Якщо e < 0.35 (це під водою), рахуємо реальне дно. 
+	// Якщо e >= 0.35 (це суша), нам байдуже на гори, просто ставимо висоту 5.0 (рівень води)
+	float ground_height = 5.0; 
+	if (e < 0.35) {
+		ground_height = 5.0 + (e - 0.35) * 40.0;
+	}
+	
+	// 3. Рахуємо глибину від поверхні (вона у нас локально на 0.0, але світ глобально зміщений)
+	float water_surface_height = 5.0; // Твоя базова висота води
+	float depth_at_vertex = water_surface_height - ground_height; 
+	
+	// 4. Створюємо множник затухання.
+	// shore_wave_damp_distance - це глибина (в метрах), на якій хвиля вже має повну силу.
+	float wave_damp = smoothstep(0.0, shore_wave_damp_distance, depth_at_vertex);
+	wave_damp = max(0.15, wave_damp); 
+	
+	displacement.y *= wave_damp;
+	
+	// 5. Придавлюємо хвилі по висоті
+	displacement.y *= wave_damp;
+	// -----------------------------
+	// Застосовуємо зміщення до сітки
 	VERTEX += displacement;
-	world_vertex = VERTEX;
+	world_vertex = VERTEX; // Зберігаємо координати для фрагментного шейдера
 	
 	// Surface Normals & Jacobian
 	vec4 nj = get_normals_jacobian(domain_warped_uv, displacement);
@@ -156,56 +171,87 @@ void vertex() {
 	jacobian_determinant = nj.w;
 	
 	// Wave Amplitude Distance Fade
-	// Flattens the waves with increasing distance from camera. This is done
-	// after surface normal calculations to retain normals in the distance.
 	float amplitude_fade_range = clamp(linear_dist, 0.0, amplitude_scale_fade_distance) / amplitude_scale_fade_distance;
 	VERTEX.y *= mix(amplitude_scale_max, amplitude_scale_min, amplitude_fade_range);
 	
 	// Planetary Curve
-	// Take distance squared from camera to vertex, multiply by strength factor,
-	// subtract from vertex Y.
 	float curvation = planetary_curve_strength * (pow(abs(domain_warped_uv.x - CAMERA_POSITION_WORLD.x), 2.0) + pow(abs(domain_warped_uv.y - CAMERA_POSITION_WORLD.z), 2.0));
 	VERTEX.y -= curvation;
 }
 
 
 void fragment() {
-	// Calculate fragments Fresnel factor
+	// Fresnel
 	float fresnel_factor = clamp(pow(abs(1.0 - dot(NORMAL, normalize(VIEW))), fresnel_power), -1.0, 1.0);
 	float fresnel = fresnel_factor * fresnel_strength + fresnel_offset;
 	
-	// Get the linear depth between each ocean pixel and whatever is behind it.
+	// РОЗРАХУНОК РЕАЛЬНОЇ ГЛИБИНИ ВОДИ (Товщина шару води)
 	float depth = texture(depth_texture, SCREEN_UV).r;
-	vec4 view = INV_PROJECTION_MATRIX * vec4(vec3(SCREEN_UV, depth), 1.0);
+	vec3 ndc = vec3(SCREEN_UV * 2.0 - 1.0, depth);
+	vec4 view = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
 	view.xyz /= view.w;
-	float linear_depth = -view.z;
 	
-	// Get the distance between the camera and each ocean pixel.
+	float linear_depth = -view.z; // Глибина до дна
+	float water_depth = -VERTEX.z; // Глибина до поверхні води
+	float depth_difference = max(0.0, linear_depth - water_depth); // Фактична товщина води!
+	
 	float linear_dist = length(world_vertex - CAMERA_POSITION_WORLD);
 	
-	// Refraction, based on depth between ocean pixel and object behind.
-	// Fades out with distance so as to be smooth transition to lower LOD shaders
-	// which may exclude this.
-	float refraction_factor = clamp(linear_depth * refraction_depth_factor, refraction_factor_min, refraction_factor_max);
-	vec2 refracted_uv = SCREEN_UV - NORMAL.xz * refraction_factor;
-	vec3 background_color = textureLod(screen_texture, refracted_uv, 0.0).rgb;
-	float refraction_blend_factor = clamp(pow(linear_depth, refraction_distance_power), 0.0, refraction_distance_max) / refraction_distance_max;
-	vec3 water_color = mix(background_color * shallow_color.rgb * refraction_background_brightness, deep_color.rgb, refraction_blend_factor * (1.0 - fresnel));
+	// 6. ПОЛІНОМІАЛЬНИЙ СПУСК ТА ГРАДІЄНТ КОЛЬОРУ
+	// Використовуємо pow() для різкого переходу (графік поліному)
+	float depth_blend_factor = clamp(depth_difference / depth_blend_max, 0.0, 1.0);
+	depth_blend_factor = pow(depth_blend_factor, depth_blend_power); 
 	
-	// Fresnel Shading
+	// Отримуємо зображення дна (рефракція)
+	float refraction_factor = clamp(depth_difference * refraction_depth_factor, refraction_factor_min, refraction_factor_max);
+	vec2 refracted_uv = SCREEN_UV - NORMAL.xz * refraction_factor;
+	vec3 refracted_bg = textureLod(screen_texture, refracted_uv, 0.0).rgb;
+	
+	// 4. ЛАЗУРНИЙ ПЕРЕЛИВ (без ефекту брудного скла)
+	// Спочатку змішуємо колір мілини та глибини
+	vec3 base_water_color = mix(shallow_color.rgb, deep_color.rgb, depth_blend_factor);
+	
+	// Визначаємо, наскільки вода перекриває дно. Навіть на нулі вона має 40% кольору
+	float opacity_blend = clamp(depth_difference * 0.5, 0.4, 1.0); 
+	
+	// Фінальний колір води (дно + лазур + відбиття)
+	vec3 water_color = mix(refracted_bg, base_water_color, opacity_blend) * (1.0 - fresnel);
+	
+	// Fresnel Shading (Додаємо небо)
 	vec3 sky = fresnel_sky_color.rgb * fresnel;
-	vec3 water = (1.0 - fresnel) * water_color * fresnel_sky_color.rgb;
+	vec3 water = water_color * fresnel_sky_color.rgb;
 	water_color = HDR(sky + water, fresnel_exposure);
 	
-	// Whitecap Rendering
-	foam_mix_factor = clamp((-jacobian_determinant + foam_jacobian_limit) * foam_coverage, 0.0, 1.0);
-	foam_mix_factor = (foam_mix_factor * foam_mix_factor) * foam_mix_strength;
-	ALBEDO = mix(water_color, texture(foam_texture, world_vertex.xz * uv_scale).rgb, foam_mix_factor);
+	// Баранці (Оригінальний код)
+	float base_foam_mix = clamp((-jacobian_determinant + foam_jacobian_limit) * foam_coverage, 0.0, 1.0);
+	base_foam_mix = (base_foam_mix * base_foam_mix) * foam_mix_strength;
+	
+	// БЕРЕГОВА ПІНА (Shoreline Foam)
+	float shore_noise = texture(foam_texture, world_vertex.xz * 0.05 + vec2(TIME * 0.03, TIME * 0.015)).r;
+	float shore_mask = smoothstep(shoreline_foam_cutoff, 0.0, depth_difference);
+	shore_mask = smoothstep(0.4, 0.7, shore_mask * shore_noise * shoreline_foam_intensity);
+	
+	// Змішуємо всі типи піни
+	foam_mix_factor = clamp(base_foam_mix + shore_mask, 0.0, 1.0);
+	vec3 base_foam_tex = texture(foam_texture, world_vertex.xz * uv_scale).rgb;
+	vec3 final_foam_color = mix(base_foam_tex, shoreline_foam_color.rgb, shore_mask);
+
+	ALBEDO = mix(water_color, final_foam_color, foam_mix_factor);
 	foam_specular_factor = (1.0 - foam_mix_factor);
 	
-	// Distance Fade
+	// СПРАВЖНЯ ПРОЗОРІСТЬ (Depth Alpha)
+	// Використовуємо поліноміальний фактор, щоб прозорість зникала красивіше
+	float depth_alpha = smoothstep(0.0, depth_blend_max * 0.5, depth_difference);
+	
+	// ВАЖЛИВО: Піна має залишатися непрозорою, навіть на нульовій глибині
+	float final_water_alpha = max(depth_alpha, foam_mix_factor);
+	
+	// Distance Fade (затухання океану вдалині на горизонті)
 	float fade_start = view_distance_max * view_fade_start;
-	ALPHA = 1.0 - (clamp(linear_dist, fade_start, view_distance_max) - fade_start) / (view_distance_max - fade_start);
+	float dist_alpha = 1.0 - (clamp(linear_dist, fade_start, view_distance_max) - fade_start) / (view_distance_max - fade_start);
+	
+	// Застосовуємо альфу
+	ALPHA = final_water_alpha * dist_alpha;
 	
 	// Misc. PBR Settings
 	ROUGHNESS = foam_mix_factor + 0.02;
@@ -227,16 +273,14 @@ void light() {
 	// Sub Surface Scattering
 	vec3 sss_sun_light = sss_color.rgb * ATTENUATION;
 	
-	// SSS Wave Backlight
 	float sss = sss_backlight_strength * max(0.0, wave_height + sss_backlight_depth) * pow(max(0.0, dot(-LIGHT, VIEW)), 4.0);
 	sss *= pow(0.5 - 0.5 * dot(-LIGHT, half_vector), 3.0);
 	sss *= sss_backlight_fov * pow(max(0.0, dot(VIEW, half_vector)) , 2.0);
 	vec3 sss_result = sss * sss_sun_light;
 	
-	// SSS Upwelling Light
 	sss_result += sss_upwelling * max(0.0, dot(LIGHT, half_vector)) * sss_sun_light;
 	SPECULAR_LIGHT += sss_result * foam_specular_factor;
 	
-	// Foam Lighting
+	// Foam Lighting (Тепер освітлює і берегову піну теж)
 	DIFFUSE_LIGHT += foam_diffuse_strength * foam_mix_factor * foam_diffuse_color.rgb * ATTENUATION;
 }

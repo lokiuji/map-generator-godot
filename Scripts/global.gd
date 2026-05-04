@@ -13,14 +13,33 @@ var continent_noise = FastNoiseLite.new()
 var chunk_modifications = {}
 var rock_detail_noise = FastNoiseLite.new()
 
+
+
 func _ready():
 	_setup_noises()
 	_generate_continent_layout()
+	_update_water_shader() # Обов'язково викликаємо при старті
 
 func set_seed(new_seed: int):
 	world_seed = new_seed
 	_setup_noises()
 	_generate_continent_layout()
+	_update_water_shader() # І викликаємо, якщо сід змінився
+
+# Виносимо логіку води в окрему функцію для чистоти коду
+func _update_water_shader():
+	var noise_tex = NoiseTexture2D.new()
+	noise_tex.noise = continent_noise
+	
+	# Тимчасово ставимо 2048 для тесту
+	noise_tex.width = 2048 
+	noise_tex.height = 2048
+	noise_tex.seamless = false 
+	
+	var ocean_mat = load("res://addons/tessarakkt.oceanfft/Ocean.tres")
+	if ocean_mat:
+		ocean_mat.set_shader_parameter("terrain_heightmap", noise_tex)
+		ocean_mat.set_shader_parameter("terrain_scale", 2048.0)
 
 func _get_seamless_noise(noise: FastNoiseLite, x: float, z: float) -> float:
 	# Перетворюємо плоску вісь X на коло (Схід та Захід зшиваються разом)
