@@ -4,16 +4,6 @@
 [ext_resource type="Material" uid="uid://d28jla4t4xqs3" path="res://Materials/terrain_mat.tres" id="2_a0tk4"]
 [ext_resource type="PackedScene" uid="uid://c7rp4nxgl8faa" path="res://Prefabs/player.tscn" id="2_noarx"]
 [ext_resource type="PackedScene" uid="uid://dj32w4116jqry" path="res://Scenes/map_ui.tscn" id="3_r3fl7"]
-[ext_resource type="Script" uid="uid://b450bm6b1npjb" path="res://addons/tessarakkt.oceanfft/components/OceanEnvironment.gd" id="5_ifh66"]
-[ext_resource type="Environment" uid="uid://drui1tvkk7b7q" path="res://addons/example/Environment.tres" id="5_m2rse"]
-[ext_resource type="Material" uid="uid://cmyo0unntq078" path="res://addons/tessarakkt.oceanfft/Ocean.tres" id="6_aeo3b"]
-[ext_resource type="Script" uid="uid://cx3twtm5gessr" path="res://addons/tessarakkt.oceanfft/components/Ocean3D.gd" id="7_worak"]
-[ext_resource type="Script" uid="uid://ohgsyp3emk0h" path="res://addons/tessarakkt.oceanfft/components/QuadTree3D.gd" id="8_aeo3b"]
-[ext_resource type="Shader" uid="uid://l0djy5rp7us3" path="res://addons/tessarakkt.oceanfft/shaders/SplashParticles.gdshader" id="13_4wftv"]
-[ext_resource type="Texture2D" uid="uid://n8ghpdii3aqh" path="res://addons/tessarakkt.oceanfft/graphics/Splash.png" id="14_lsvv6"]
-[ext_resource type="Shader" uid="uid://bov46gyr36itq" path="res://addons/tessarakkt.oceanfft/shaders/UnderwaterParticles.gdshader" id="15_24o0o"]
-[ext_resource type="Texture2D" uid="uid://b4cb3vkqormjf" path="res://addons/tessarakkt.oceanfft/graphics/bubble_6_grayscale.png" id="16_o74xe"]
-[ext_resource type="Shader" uid="uid://c3d5ijcw5c7t1" path="res://addons/tessarakkt.oceanfft/shaders/UnderwaterPostProc.gdshader" id="17_odfm3"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_18r8k"]
 noise_type = 3
@@ -150,6 +140,21 @@ shader_parameter/noise_texture = SubResource("NoiseTexture2D_xvh5c")
 shader_parameter/distortion_speed = 5.0
 shader_parameter/distortion_amount = 1.0
 
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_worak"]
+
+[sub_resource type="Sky" id="Sky_rvjhm"]
+sky_material = SubResource("ProceduralSkyMaterial_worak")
+
+[sub_resource type="Environment" id="Environment_cb6ip"]
+background_mode = 2
+sky = SubResource("Sky_rvjhm")
+
+[sub_resource type="Resource" id="Resource_vudi7"]
+script = ExtResource("5_t3l2h")
+domain_warp_strength = 50.0
+choppiness = 2.12
+metadata/_custom_type_script = "uid://cx3twtm5gessr"
+
 [node name="Node3D" type="Node3D" unique_id=1770792140]
 transform = Transform3D(0.9999619, -0.00012184146, 0.008725685, 0, 0.99990255, 0.01396218, -0.008726535, -0.013961649, 0.99986446, 0, 0, 0)
 script = ExtResource("1_a202f")
@@ -181,75 +186,4 @@ offset_bottom = 40.0
 
 [node name="MapUI" parent="." unique_id=1628385544 instance=ExtResource("3_r3fl7")]
 
-[node name="OceanEnvironment" type="WorldEnvironment" parent="." unique_id=1699821373 node_paths=PackedStringArray("sun_light", "sky_light", "splash_particles", "splash_sub_particles", "underwater_particles", "underwater_post_proc")]
-environment = ExtResource("5_m2rse")
-script = ExtResource("5_ifh66")
-ocean = SubResource("Resource_opkt2")
-sun_light = NodePath("DirectionalLight3D_Sun")
-sky_light = NodePath("DirectionalLight3D_Sky")
-splash_particles = NodePath("SplashParticles")
-splash_sub_particles = NodePath("SplashParticles/SplashSubParticles")
-underwater_particles = NodePath("UnderwaterParticles")
-underwater_post_proc = NodePath("PostProcessingLayer/UnderwaterPostProc")
 
-[node name="QuadTree3D" type="Node3D" parent="OceanEnvironment" unique_id=789984337]
-script = ExtResource("8_aeo3b")
-lod_level = 7
-quad_size = 32768.0
-ranges = Array[float]([250.0, 500.0, 1900.0, 3800.0, 7600.0, 15200.0, 30400.0, 60800.0])
-material = ExtResource("6_aeo3b")
-
-[node name="ReflectionProbe" type="ReflectionProbe" parent="OceanEnvironment" unique_id=877948325]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 24, 0)
-max_distance = 1000.0
-size = Vector3(200, 200, 200)
-ambient_mode = 0
-
-[node name="SplashParticles" type="GPUParticles3D" parent="OceanEnvironment" unique_id=1399862842]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 19.7738, -9.06308)
-emitting = false
-amount = 1000
-sub_emitter = NodePath("SplashSubParticles")
-lifetime = 3.0
-transform_align = 1
-trail_lifetime = 0.15
-process_material = SubResource("ShaderMaterial_p0g3t")
-draw_pass_1 = SubResource("QuadMesh_p5o28")
-
-[node name="SplashSubParticles" type="GPUParticles3D" parent="OceanEnvironment/SplashParticles" unique_id=1610465538]
-emitting = false
-amount = 5000
-lifetime = 3.0
-process_material = SubResource("ShaderMaterial_gc8pj")
-draw_pass_1 = SubResource("QuadMesh_g2dg2")
-
-[node name="UnderwaterParticles" type="GPUParticles3D" parent="OceanEnvironment" unique_id=1354957635]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 19.7738, -9.06308)
-emitting = false
-amount = 1000
-lifetime = 2.0
-transform_align = 1
-trail_lifetime = 0.15
-process_material = SubResource("ShaderMaterial_awrh8")
-draw_pass_1 = SubResource("QuadMesh_x0k2k")
-
-[node name="DirectionalLight3D_Sun" type="DirectionalLight3D" parent="OceanEnvironment" unique_id=1165906361]
-transform = Transform3D(0.848048, 0.223954, -0.48027, 0, 0.906308, 0.422618, 0.529919, -0.358401, 0.768593, 0, 2.5, 0)
-light_energy = 0.5
-
-[node name="DirectionalLight3D_Sky" type="DirectionalLight3D" parent="OceanEnvironment" unique_id=394346294]
-transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, 0, 2.5, 0)
-visible = false
-light_energy = 2.5
-
-[node name="PostProcessingLayer" type="CanvasLayer" parent="OceanEnvironment" unique_id=1191444709]
-layer = 0
-
-[node name="UnderwaterPostProc" type="ColorRect" parent="OceanEnvironment/PostProcessingLayer" unique_id=1785459797]
-material = SubResource("ShaderMaterial_6utjj")
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_bottom = 2.0
-grow_horizontal = 2
-grow_vertical = 2
