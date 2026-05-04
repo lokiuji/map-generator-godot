@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bnackqjcak4cb"
-path="res://.godot/imported/BuoyancyBody3D.svg-8907ea1b4f6581ec759b8c13826c5308.ctex"
+path="res://.godot/imported/BuoyancyBody3D.svg-f8f9c325df111eff263a72a61dd0adcf.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Addons/tessarakkt.oceanfft/icons/BuoyancyBody3D.svg"
-dest_files=["res://.godot/imported/BuoyancyBody3D.svg-8907ea1b4f6581ec759b8c13826c5308.ctex"]
+source_file="res://addons/tessarakkt.oceanfft/icons/BuoyancyBody3D.svg"
+dest_files=["res://.godot/imported/BuoyancyBody3D.svg-f8f9c325df111eff263a72a61dd0adcf.ctex"]
 
 [params]
 

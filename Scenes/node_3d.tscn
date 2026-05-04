@@ -4,6 +4,10 @@
 [ext_resource type="Material" uid="uid://d28jla4t4xqs3" path="res://Materials/terrain_mat.tres" id="2_a0tk4"]
 [ext_resource type="PackedScene" uid="uid://c7rp4nxgl8faa" path="res://Prefabs/player.tscn" id="2_noarx"]
 [ext_resource type="PackedScene" uid="uid://dj32w4116jqry" path="res://Scenes/map_ui.tscn" id="3_r3fl7"]
+[ext_resource type="Script" uid="uid://b450bm6b1npjb" path="res://addons/tessarakkt.oceanfft/components/OceanEnvironment.gd" id="5_aeo3b"]
+[ext_resource type="Script" uid="uid://cx3twtm5gessr" path="res://addons/tessarakkt.oceanfft/components/Ocean3D.gd" id="5_t3l2h"]
+[ext_resource type="PackedScene" uid="uid://b554xveqosfto" path="res://addons/tessarakkt.oceanfft/components/QuadTree3D.tscn" id="6_ifh66"]
+[ext_resource type="Material" uid="uid://cmyo0unntq078" path="res://addons/tessarakkt.oceanfft/Ocean.tres" id="7_aeo3b"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_noarx"]
 sky_top_color = Color(0.28338894, 0.58678764, 0.92809415, 1)
@@ -25,6 +29,21 @@ fog_light_color = Color(0.5704, 0.92, 0.86755997, 1)
 fog_density = 0.0002
 volumetric_fog_density = 0.01
 volumetric_fog_albedo = Color(0.99885863, 0.71651393, 0.4104297, 1)
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_worak"]
+
+[sub_resource type="Sky" id="Sky_rvjhm"]
+sky_material = SubResource("ProceduralSkyMaterial_worak")
+
+[sub_resource type="Environment" id="Environment_cb6ip"]
+background_mode = 2
+sky = SubResource("Sky_rvjhm")
+
+[sub_resource type="Resource" id="Resource_vudi7"]
+script = ExtResource("5_t3l2h")
+domain_warp_strength = 50.0
+choppiness = 2.12
+metadata/_custom_type_script = "uid://cx3twtm5gessr"
 
 [node name="Node3D" type="Node3D" unique_id=1770792140]
 transform = Transform3D(0.9999619, -0.00012184146, 0.008725685, 0, 0.99990255, 0.01396218, -0.008726535, -0.013961649, 0.99986446, 0, 0, 0)
@@ -48,3 +67,20 @@ directional_shadow_max_distance = 150.0
 environment = SubResource("Environment_noarx")
 
 [node name="MapUI" parent="." unique_id=1628385544 instance=ExtResource("3_r3fl7")]
+
+[node name="OceanEnvironment" type="WorldEnvironment" parent="." unique_id=1872451169 node_paths=PackedStringArray("sun_light", "sky_light")]
+environment = SubResource("Environment_cb6ip")
+script = ExtResource("5_aeo3b")
+ocean = SubResource("Resource_vudi7")
+sun_light = NodePath("../Sun")
+sky_light = NodePath("../SkyLight")
+metadata/_custom_type_script = "uid://b450bm6b1npjb"
+
+[node name="QuadTree3D" parent="OceanEnvironment" unique_id=274978623 instance=ExtResource("6_ifh66")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 0)
+material = ExtResource("7_aeo3b")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=854234957]
+light_color = Color(1, 0.78431374, 0.49803922, 1)
+
+[node name="SkyLight" type="DirectionalLight3D" parent="." unique_id=542078041]

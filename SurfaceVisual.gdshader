@@ -1,14 +1,9 @@
 shader_type spatial;
 render_mode world_vertex_coords, depth_draw_always, cull_disabled;
 
+
 #include "OceanCommon.gdshaderinc"
 
-// --- НАШІ НАЛАШТУВАННЯ БЕРЕГА ---
-group_uniforms ShorelinePhysics;
-uniform sampler2D terrain_noise_map; 
-uniform float world_size = 60000.0;
-uniform float shore_wave_multiplier = 0.15;
-// --------------------------------
 
 // Sun specular highlight
 uniform float specular_strength = 1.0;
@@ -21,13 +16,20 @@ uniform float view_fade_start = 0.95;
 uniform vec4 deep_color:source_color = vec4(0.004f, 0.016f, 0.047f, 1.0);
 uniform vec4 shallow_color:source_color = vec4(0, 0.729412, 0.988235, 1);
 
+
 group_uniforms Fresnel;
 /******************************************************************************/
+// Note that PBR specular and metallic settings can significantly affect the
+// result of fresnel shading. Consider playing with those settings if fresnel
+// shading can't be made to look proper with just these settings.
+
+// Fresnel Shading
 uniform float fresnel_offset = 0.02;
 uniform float fresnel_strength = 0.0;
 uniform float fresnel_power = 5.0;
 uniform float fresnel_exposure = 0.03;
 uniform vec4 fresnel_sky_color:source_color = vec4(1.6f, 4.8f, 6.4f, 1.0);
+
 
 group_uniforms PhysicallyBasedRendering;
 /******************************************************************************/
@@ -35,14 +37,21 @@ uniform float pbr_specular_strength = 0.1;
 uniform float pbr_specular_offset = 0.1;
 uniform float pbr_metallic_strength = 0.0;
 
+
 group_uniforms Refraction;
 /******************************************************************************/
+// TODO: Needs to be completely redone;
+
 uniform float refraction_factor_min = 0.0;
 uniform float refraction_factor_max = 0.025;
 uniform float refraction_distance_power = 1.55;
 uniform float refraction_distance_max = 30000.0;
 uniform float refraction_background_brightness = 0.2;
+
+// Adjusts how strong the refraction is based on the distance between the ocean
+// pixel and the object behind it.
 uniform float refraction_depth_factor = 0.00001;
+
 
 group_uniforms SubSurfaceScattering;
 /******************************************************************************/
@@ -52,8 +61,13 @@ uniform float sss_backlight_depth = 15.0;
 uniform float sss_upwelling = 0.075;
 uniform vec4 sss_color:source_color = vec4(0, 0.729412, 0.988235, 1);
 
+
 group_uniforms Whitecaps;
 /******************************************************************************/
+// Basic whitecap rendering using Jacobian determinant.
+// TODO: Calculate Jacobian and foam in another shader to support temporal
+//       effects like foam persisting and bubbling out.
+
 uniform float foam_jacobian_limit = 0.5;
 uniform float foam_coverage = 0.1;
 uniform float foam_mix_strength = 1.0;
@@ -61,25 +75,44 @@ uniform float foam_diffuse_strength = 1.0;
 uniform vec4 foam_diffuse_color:source_color = vec4(0.91764706373215, 0.96862745285034, 1.0, 1.0);
 uniform sampler2D foam_texture : hint_default_white;
 
+
 group_uniforms Internal;
 /******************************************************************************/
+// These are intended to be updated during runtime. Setting values in the editor
+// may not have the desired result.
+
+// The vertex resolution of the mesh tiles the shader is applied to.
 uniform float vertex_resolution = 256.0;
+
 
 group_uniforms Internal.WaveDeformModifiers;
 /******************************************************************************/
+// Adjust the wave displacement maps as they are applied to the surface.
+// This will be correctly accounted for by normals and whitecaps.
+// Settings will only affect buoyancy if set through Ocean3D
+
+// Simple planetary curve approximation.
+// Decrease height of surface exponentially as distance from camera increases.
 uniform float planetary_curve_strength = 0.000001;
+
+// Decreases the height of the wave deformation as distance from the camera
+// increases.
+// This occurs after surface normals and whitecap coverage has been calculated.
 uniform float amplitude_scale_min = 0.25;
 uniform float amplitude_scale_max = 1.0;
 uniform float amplitude_scale_fade_distance = 12000.0;
 
+
 uniform sampler2D depth_texture : hint_depth_texture, filter_linear_mipmap;
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear_mipmap;
+
 
 // Instance Uniforms
 /******************************************************************************/
 instance uniform float patch_size = 512.0;
 instance uniform float min_lod_morph_distance;
 instance uniform float max_lod_morph_distance;
+
 
 // Varyings
 /******************************************************************************/
@@ -89,14 +122,17 @@ varying float wave_height;
 varying float foam_mix_factor;
 varying float foam_specular_factor;
 
+
 vec2 lod_morph(float morph_factor, vec2 grid_pos) {
 	vec2 fracPart = fract(grid_pos.xy * vertex_resolution * 0.5) * 2.0 / vertex_resolution;
 	return fracPart * patch_size * morph_factor;
 }
 
+
 vec3 HDR(vec3 color, float e) {
 	return 1.0 - exp(-color * e);
 }
+
 
 void vertex() {
 	float linear_dist = length(VERTEX - CAMERA_POSITION_WORLD);
@@ -109,26 +145,8 @@ void vertex() {
 	vec2 domain_warped_uv = domain_warp(VERTEX.xz, linear_dist);
 	
 	// Vertex Offset
+	// Use the world vertex XZ coordinates as UV for simplicity
 	vec3 displacement = get_displacement(domain_warped_uv);
-	
-	// --- ІНТЕГРАЦІЯ БЕРЕГА ---
-	// Нормалізуємо координати світу в координати UV маски (від 0.0 до 1.0)
-	vec2 mask_uv = (VERTEX.xz / world_size) + 0.5;
-	
-	// Зчитуємо маску (1.0 = берег, 0.0 = море)
-	float raw_island_mask = texture(terrain_noise_map, mask_uv).r;
-	
-	// Робимо так, щоб маска спрацьовувала ТІЛЬКИ дуже близько до берега
-	// Усе, що має значення маски менше 0.5, буде вважатися відкритим морем (0.0)
-	float sharp_mask = smoothstep(0.5, 0.9, raw_island_mask);
-	
-	// Застосовуємо множник ТІЛЬКИ там, де sharp_mask наближається до 1.0
-	float wave_dampening = mix(1.0, shore_wave_multiplier, sharp_mask);
-	
-	// Приглушуємо висоту та фізику хвилі
-	displacement *= wave_dampening;
-	// -------------------------
-
 	VERTEX += displacement;
 	world_vertex = VERTEX;
 	
@@ -138,40 +156,36 @@ void vertex() {
 	jacobian_determinant = nj.w;
 	
 	// Wave Amplitude Distance Fade
+	// Flattens the waves with increasing distance from camera. This is done
+	// after surface normal calculations to retain normals in the distance.
 	float amplitude_fade_range = clamp(linear_dist, 0.0, amplitude_scale_fade_distance) / amplitude_scale_fade_distance;
 	VERTEX.y *= mix(amplitude_scale_max, amplitude_scale_min, amplitude_fade_range);
 	
 	// Planetary Curve
+	// Take distance squared from camera to vertex, multiply by strength factor,
+	// subtract from vertex Y.
 	float curvation = planetary_curve_strength * (pow(abs(domain_warped_uv.x - CAMERA_POSITION_WORLD.x), 2.0) + pow(abs(domain_warped_uv.y - CAMERA_POSITION_WORLD.z), 2.0));
 	VERTEX.y -= curvation;
 }
+
 
 void fragment() {
 	// Calculate fragments Fresnel factor
 	float fresnel_factor = clamp(pow(abs(1.0 - dot(NORMAL, normalize(VIEW))), fresnel_power), -1.0, 1.0);
 	float fresnel = fresnel_factor * fresnel_strength + fresnel_offset;
 	
-	// Відстань до дна (твого ландшафту)
-	float depth_raw = texture(depth_texture, SCREEN_UV).r;
-	vec4 view_p = INV_PROJECTION_MATRIX * vec4(vec3(SCREEN_UV, depth_raw), 1.0);
-	view_p.xyz /= view_p.w;
-	float terrain_z = -view_p.z;
-
-	// Відстань до поверхні води
-	vec4 water_view = VIEW_MATRIX * vec4(VERTEX, 1.0);
-	float water_z = -water_view.z;
-
-	// Реальна товщина води!
-	float true_water_depth = terrain_z - water_z;
-	
-	// Передаємо стару змінну linear_depth для сумісності з рештою коду,
-	// але тепер вона дорівнює товщині води
-	float linear_depth = true_water_depth;
+	// Get the linear depth between each ocean pixel and whatever is behind it.
+	float depth = texture(depth_texture, SCREEN_UV).r;
+	vec4 view = INV_PROJECTION_MATRIX * vec4(vec3(SCREEN_UV, depth), 1.0);
+	view.xyz /= view.w;
+	float linear_depth = -view.z;
 	
 	// Get the distance between the camera and each ocean pixel.
 	float linear_dist = length(world_vertex - CAMERA_POSITION_WORLD);
 	
 	// Refraction, based on depth between ocean pixel and object behind.
+	// Fades out with distance so as to be smooth transition to lower LOD shaders
+	// which may exclude this.
 	float refraction_factor = clamp(linear_depth * refraction_depth_factor, refraction_factor_min, refraction_factor_max);
 	vec2 refracted_uv = SCREEN_UV - NORMAL.xz * refraction_factor;
 	vec3 background_color = textureLod(screen_texture, refracted_uv, 0.0).rgb;
@@ -200,6 +214,7 @@ void fragment() {
 	
 	wave_height = world_vertex.y;
 }
+
 
 void light() {
 	vec3 half_vector = normalize(LIGHT + VIEW);

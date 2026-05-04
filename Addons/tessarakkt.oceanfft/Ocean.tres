@@ -1,4 +1,4 @@
-[gd_resource type="ShaderMaterial" load_steps=6 format=3 uid="uid://cmyo0unntq078"]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://cmyo0unntq078"]
 
 [ext_resource type="Shader" uid="uid://dddvgper22b7o" path="res://addons/tessarakkt.oceanfft/shaders/SurfaceVisual.gdshader" id="1_56q88"]
 
@@ -41,6 +41,8 @@ shader_parameter/planetary_curve_strength = 1e-06
 shader_parameter/amplitude_scale_min = 0.25
 shader_parameter/amplitude_scale_max = 1.0
 shader_parameter/amplitude_scale_fade_distance = 12000.0
+shader_parameter/world_size = 60000.0
+shader_parameter/shore_wave_multiplier = 0.2
 shader_parameter/specular_strength = 1.0
 shader_parameter/specular_power = 1500.0
 shader_parameter/view_fade_start = 0.95

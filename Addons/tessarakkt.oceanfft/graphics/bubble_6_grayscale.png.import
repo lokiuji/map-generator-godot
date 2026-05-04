@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b4cb3vkqormjf"
-path.s3tc="res://.godot/imported/bubble_6_grayscale.png-9f29b5a2d6f220e712dc210a9f959eac.s3tc.ctex"
+path.s3tc="res://.godot/imported/bubble_6_grayscale.png-576143243ca254e6d8a1a0ea22f73328.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
@@ -11,8 +11,8 @@ metadata={
 
 [deps]
 
-source_file="res://Addons/tessarakkt.oceanfft/graphics/bubble_6_grayscale.png"
-dest_files=["res://.godot/imported/bubble_6_grayscale.png-9f29b5a2d6f220e712dc210a9f959eac.s3tc.ctex"]
+source_file="res://addons/tessarakkt.oceanfft/graphics/bubble_6_grayscale.png"
+dest_files=["res://.godot/imported/bubble_6_grayscale.png-576143243ca254e6d8a1a0ea22f73328.s3tc.ctex"]
 
 [params]
 

@@ -89,7 +89,6 @@ func _build_terrain_data_in_thread():
 	rng.seed = hash(str(chunk_pos) + str(chunk_world_offset))
 	
 	var grass_data = [] 
-	var needs_water = false
 	
 	for z in range(resolution + 1):
 		if is_cancelled: return
@@ -113,7 +112,6 @@ func _build_terrain_data_in_thread():
 			st.set_uv(Vector2(is_g, 0.0))
 			
 			st.add_vertex(Vector3(local_x, py, local_z))
-			if py < 4.9: needs_water = true
 			
 	for z in range(resolution):
 		for x in range(resolution):

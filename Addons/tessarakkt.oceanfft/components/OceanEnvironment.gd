@@ -120,7 +120,8 @@ func _process(delta:float) -> void:
 func go_under_water() -> void:
 	player_is_surfaced = false
 	
-	underwater_post_proc.visible = true
+	if underwater_post_proc:
+		underwater_post_proc.visible = true
 	
 	sky_light.visible = true
 	sun_light.light_energy = 0.75
@@ -149,7 +150,8 @@ func go_under_water() -> void:
 func go_above_water() -> void:
 	player_is_surfaced = true
 	
-	underwater_post_proc.visible = false
+	if underwater_post_proc:
+		underwater_post_proc.visible = false
 	
 	sky_light.visible = false
 	sun_light.light_energy = 0.5

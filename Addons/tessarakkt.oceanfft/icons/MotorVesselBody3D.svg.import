@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bmn8yvw1vhwk2"
-path="res://.godot/imported/MotorVesselBody3D.svg-f412590db7cc8281546d42927f50e30d.ctex"
+path="res://.godot/imported/MotorVesselBody3D.svg-30c77a59f76d441d35020fe64a16620e.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Addons/tessarakkt.oceanfft/icons/MotorVesselBody3D.svg"
-dest_files=["res://.godot/imported/MotorVesselBody3D.svg-f412590db7cc8281546d42927f50e30d.ctex"]
+source_file="res://addons/tessarakkt.oceanfft/icons/MotorVesselBody3D.svg"
+dest_files=["res://.godot/imported/MotorVesselBody3D.svg-30c77a59f76d441d35020fe64a16620e.ctex"]
 
 [params]
 

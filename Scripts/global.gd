@@ -16,6 +16,16 @@ var rock_detail_noise = FastNoiseLite.new()
 func _ready():
 	_setup_noises()
 	_generate_continent_layout()
+	
+	# ЗАЛІЗОБЕТОННИЙ МЕТОД: 
+	# Замість пошуку нод, ми просто вантажимо сам файл матеріалу!
+	var ocean_mat = load("res://addons/tessarakkt.oceanfft/Ocean.tres")
+	
+	if ocean_mat:
+		bake_ocean_mask(ocean_mat)
+	else:
+		push_error("Блять, файл Ocean.tres не знайдено за вказаним шляхом!")
+
 
 func set_seed(new_seed: int):
 	world_seed = new_seed
@@ -233,3 +243,35 @@ func get_absolute_chunk_id(p_world_offset: Vector2, local_chunk_pos: Vector2, ch
 	var wrapped_z = fposmod(real_z + half_world, WORLD_SIZE) - half_world
 	
 	return (Vector2(wrapped_x, wrapped_z) / chunk_size).round()
+
+var ocean_mask_texture: ImageTexture
+
+func bake_ocean_mask(ocean_material: ShaderMaterial):
+	print("Починаю запікання маски океану...")
+	var mask_size = 512 # Роздільна здатність маски
+	var img = Image.create(mask_size, mask_size, false, Image.FORMAT_R8)
+	var half_world = WORLD_SIZE / 2.0
+	
+	# Проходимося по сітці і "скануємо" висоти
+	for x in range(mask_size):
+		for y in range(mask_size):
+			# Переводимо піксель текстури у реальні світові координати
+			var world_x = lerp(-half_world, half_world, float(x) / mask_size)
+			var world_z = lerp(-half_world, half_world, float(y) / mask_size)
+			
+			# Використовуємо ТВОЮ функцію висоти
+			var elevation = get_raw_elevation(world_x, world_z)
+			
+			# Рівень води у тебе десь 0.35. 
+			# Створюємо плавний градієнт: 0.25 (глибина) = 0.0 (чорне), 0.4 (берег) = 1.0 (біле)
+			var mask_value = smoothstep(0.20, 0.40, elevation)
+			
+			img.set_pixel(x, y, Color(mask_value, mask_value, mask_value))
+			
+	ocean_mask_texture = ImageTexture.create_from_image(img)
+	
+	# Передаємо готову текстуру в шейдер води
+	if ocean_material:
+		ocean_material.set_shader_parameter("terrain_noise_map", ocean_mask_texture)
+		
+	print("Маска океану успішно передана в шейдер!")

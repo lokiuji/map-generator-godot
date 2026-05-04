@@ -3,12 +3,12 @@
 importer="glsl"
 type="RDShaderFile"
 uid="uid://sbprgks2pmd3"
-path="res://.godot/imported/InitialSpectrum.glsl-7a80558d89bec6630cc451014ff251f7.res"
+path="res://.godot/imported/InitialSpectrum.glsl-962968e09236fa4192355bfbd78be752.res"
 
 [deps]
 
-source_file="res://Addons/tessarakkt.oceanfft/shaders/InitialSpectrum.glsl"
-dest_files=["res://.godot/imported/InitialSpectrum.glsl-7a80558d89bec6630cc451014ff251f7.res"]
+source_file="res://addons/tessarakkt.oceanfft/shaders/InitialSpectrum.glsl"
+dest_files=["res://.godot/imported/InitialSpectrum.glsl-962968e09236fa4192355bfbd78be752.res"]
 
 [params]
 
