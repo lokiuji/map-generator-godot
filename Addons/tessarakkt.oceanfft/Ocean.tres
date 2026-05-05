@@ -46,6 +46,7 @@ shader_parameter/patch_size = 512.0
 shader_parameter/min_lod_morph_distance = 100.0
 shader_parameter/max_lod_morph_distance = 2000.0
 shader_parameter/local_map_size = 1000.0
+shader_parameter/min_terrain_height = -100.0
 shader_parameter/max_terrain_height = 150.0
 shader_parameter/player_position = Vector3(0, 0, 0)
 shader_parameter/specular_strength = 1.0

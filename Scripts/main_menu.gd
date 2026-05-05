@@ -23,8 +23,8 @@ func _update_seed_and_map(new_seed: int):
 	Global.set_seed(new_seed)
 	seed_input.text = str(new_seed)
 	# Скидаємо на наші нові маркери-запобіжники
-	Global.custom_spawn_x = -999999.0
-	Global.custom_spawn_z = -999999.0
+	Global.custom_spawn_x = -0.0
+	Global.custom_spawn_z = -0.0
 	if marker_rect:
 		marker_rect.queue_free()
 		marker_rect = null

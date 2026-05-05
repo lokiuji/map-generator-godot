@@ -2,8 +2,8 @@ extends Node
 
 const WORLD_SIZE: float = 60000.0 
 var world_seed: int = 777
-var custom_spawn_x: float = -999999.0
-var custom_spawn_z: float = -999999.0
+var custom_spawn_x: float = 0.0
+var custom_spawn_z: float = 0.0
 var world_offset: Vector2 = Vector2.ZERO
 var elevation_noise = FastNoiseLite.new()
 var mountain_noise = FastNoiseLite.new()
@@ -213,18 +213,24 @@ func get_biome_data(x: float, z: float) -> Dictionary:
 
 # Оновлена функція висоти з гідравлічною ерозією у global.gd
 func _get_final_height(world_x: float, world_z: float) -> float:
-	var e = get_raw_elevation(world_x, world_z)
-	if e < 0.35: return 5.0 + (e - 0.35) * 40.0
+	# 1. ЗАХИСТ ВІД ФАНТОМНИХ ПЛЯЖІВ (Зациклюємо світ кожні 100 км)
+	var safe_x = wrapf(world_x, -100000.0, 100000.0)
+	var safe_z = wrapf(world_z, -100000.0, 100000.0)
+	
+	var e = get_raw_elevation(safe_x, safe_z)
+	
+	# 2. РОБИМО СПРАВЖНЄ ДНО: плавно опускаємося від 5.0 (берег) до -80.0 (безодня)
+	if e < 0.35: 
+		return lerp(-80.0, 5.0, e / 0.35)
 	
 	var land = pow(e - 0.35, 1.2) * 150.0
 	var ridge = smoothstep(0.4, 0.85, e)
 	
-	# Базові гори
-	var peaks = _get_seamless_noise(mountain_noise, world_x, world_z) * 180.0 
+	# Базові гори (використовуємо БЕЗПЕЧНІ координати!)
+	var peaks = _get_seamless_noise(mountain_noise, safe_x, safe_z) * 180.0 
 	
-	# 1. ПЛАВНА ЕРОЗІЯ (виправлено гострі піки):
-	# Замість агресивного вирізання на 60%, робимо м'які долини на макс 25%
-	var erosion_noise_val = _get_seamless_noise(moisture_noise, world_x * 1.5, world_z * 1.5)
+	# ПЛАВНА ЕРОЗІЯ 
+	var erosion_noise_val = _get_seamless_noise(moisture_noise, safe_x * 1.5, safe_z * 1.5)
 	var erosion_carve = smoothstep(0.3, 0.7, erosion_noise_val)
 	var eroded_peaks = peaks - (peaks * erosion_carve * 0.25)
 	

@@ -6,8 +6,9 @@ render_mode world_vertex_coords, depth_draw_always, cull_disabled;
 
 // --- НАЛАШТУВАННЯ ЛОКАЛЬНОЇ МАПИ (Скан з камери) ---
 uniform sampler2D terrain_heightmap;
-uniform float local_map_size = 1000.0; // Size камери
-uniform float max_terrain_height = 150.0; // Має збігатися з DepthPostProcess
+uniform float local_map_size = 8000.0; // Збільшено до розмірів MapCamera!
+uniform float min_terrain_height = -100.0; // Синхронізація зі сканером
+uniform float max_terrain_height = 400.0;
 uniform vec3 player_position;
 
 // Sun specular highlight
@@ -132,13 +133,15 @@ void vertex() {
 	vec3 displacement = get_displacement(domain_warped_uv);
 	
 	// --- МАГІЯ ЗАТУХАННЯ ХВИЛЬ (Через локальну мапу Viewport) ---
-	// 1. Отримуємо UV на локальній мапі (камера завжди над гравцем)
+	// 1. Отримуємо UV на локальній мапі
 	vec2 map_uv = (VERTEX.xz - player_position.xz) / local_map_size + vec2(0.5);
 	
-	// 2. Зчитуємо висоту (якщо за межами мапи - дефолтна глибина -50.0)
-	v_ground_height = -50.0; 
+	// 2. Зчитуємо висоту. Дефолт за межами мапи тепер: -100.0
+	v_ground_height = -100.0; 
 	if (map_uv.x >= 0.0 && map_uv.x <= 1.0 && map_uv.y >= 0.0 && map_uv.y <= 1.0) {
-		v_ground_height = texture(terrain_heightmap, map_uv).r * max_terrain_height;
+		float norm_h = texture(terrain_heightmap, map_uv).r;
+		// Конвертуємо колір назад у метри
+		v_ground_height = mix(min_terrain_height, max_terrain_height, norm_h);
 	}
 	
 	// 3. ЗАТУХАННЯ ТА ОПТИМІЗАЦІЯ ВЕРШИН
@@ -147,7 +150,7 @@ void vertex() {
 	} else {
 		float depth_at_vertex = 5.0 - v_ground_height;
 		float wave_damp = smoothstep(0.0, shore_wave_damp_distance, depth_at_vertex);
-		wave_damp = max(0.15, wave_damp); // Залишаємо мінімум 15% хвиль на березі
+		wave_damp = max(0.15, wave_damp); 
 		displacement.y *= wave_damp;
 	}
 	// -----------------------------
@@ -256,6 +259,11 @@ void fragment() {
 	SPECULAR = pbr_specular_strength * foam_specular_factor * fresnel_factor + pbr_specular_offset;
 	
 	wave_height = world_vertex.y;
+	
+	// РЕЖИМ ДЕБАГУ: Фарбуємо мілководдя в червоний колір
+	if (v_ground_height > -5.0) {
+		ALBEDO = vec3(1.0, 0.0, 0.0);
+	}
 }
 
 

@@ -49,7 +49,7 @@ func _ensure_safe_spawn():
 		max_attempts -= 1
 
 func _find_valid_spawn_point():
-	if Global.custom_spawn_x != -999999.0:
+	if Global.custom_spawn_x != 0.0:
 		Global.world_offset = Vector2(Global.custom_spawn_x, Global.custom_spawn_z)
 		return
 		
@@ -120,7 +120,7 @@ func _check_origin_shift():
 			new_active[new_p] = c
 		active_chunks = new_active
 		
-		var new_spawn = []
+		var new_spawn: Array[Vector2] = [] # Тепер вони ідеально співпадають за типом!
 		for p in chunk_spawn_queue: new_spawn.append(p - chunk_offset)
 		chunk_spawn_queue = new_spawn
 		
@@ -181,10 +181,27 @@ func spawn_chunk(p: Vector2):
 	# Передаємо зміщення світу в генератор
 	c.start_generation(p, CHUNK_SIZE, lod["res"], terrain_material, target_grass, player, Global.world_offset, lod["col"])
 
-func _on_chunk_ready(chunk: Node3D):
+func _on_chunk_ready(_chunk: Node3D):
 	if chunks_building > 0: chunks_building -= 1
-	if is_world_loading and chunk.chunk_pos.distance_to(current_player_chunk) < 0.1:
-		_drop_player()
+	
+	# Якщо ми в стані телепортації або першого спавну
+	if is_world_loading:
+		var safe_radius = 4 # Радіус безпеки (4 означає квадрат 9х9 чанків навколо нас)
+		var area_ready = true
+		
+		# Перевіряємо, чи всі чанки в цьому радіусі вже існують і готові
+		for x in range(-safe_radius, safe_radius + 1):
+			for z in range(-safe_radius, safe_radius + 1):
+				var check_pos = current_player_chunk + Vector2(x, z)
+				if not active_chunks.has(check_pos) or not active_chunks[check_pos].is_ready:
+					area_ready = false
+					break # Знайшли незбудований чанк - перериваємо перевірку
+			if not area_ready:
+				break
+				
+		# Якщо ВЕСЬ квадрат 9х9 завантажився - тільки тоді падаємо
+		if area_ready:
+			_drop_player()
 
 func _drop_player():
 	var sy = Global._get_final_height(Global.world_offset.x, Global.world_offset.y)
