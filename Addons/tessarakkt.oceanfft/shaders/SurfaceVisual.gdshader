@@ -4,10 +4,16 @@ render_mode world_vertex_coords, depth_draw_always, cull_disabled;
 
 #include "OceanCommon.gdshaderinc"
 
+// --- КАУСТИКА ---
+uniform sampler2D caustic_texture : hint_default_black, repeat_enable;
+uniform float caustic_scale = 0.2;
+uniform float caustic_strength = 1.5;
+uniform vec2 caustic_speed = vec2(0.05, 0.03);
+
 // --- НАЛАШТУВАННЯ ЛОКАЛЬНОЇ МАПИ (Скан з камери) ---
 uniform sampler2D terrain_heightmap;
 uniform float local_map_size = 8000.0; // Збільшено до розмірів MapCamera!
-uniform float min_terrain_height = -100.0; // Синхронізація зі сканером
+uniform float min_terrain_height = -200.0; // Синхронізація зі сканером
 uniform float max_terrain_height = 400.0;
 uniform vec3 player_position;
 
@@ -18,11 +24,15 @@ uniform float specular_power = 1500.0;
 // ALPHA will begin decreasing to 0.0 after view_distance_max * view_fade_start
 uniform float view_fade_start = 0.95;
 
-// Colors & Depth Blend (ОНОВЛЕНО ДЛЯ СТИЛІЗОВАНОЇ ВОДИ)
-uniform vec4 deep_color:source_color = vec4(0.004f, 0.016f, 0.047f, 1.0);
-uniform vec4 shallow_color:source_color = vec4(0, 0.729412, 0.988235, 1);
-uniform float depth_blend_max = 15.0; // На якій глибині (в метрах) вода стає повністю "deep_color"
-uniform float depth_blend_power = 2.5; // Наскільки різким є перехід кольору
+// Colors & Depth Blend (3-ЕТАПНИЙ ГРАДІЄНТ)
+uniform vec4 deep_color:source_color = vec4(0.004, 0.016, 0.047, 1.0);
+uniform vec4 mid_color:source_color = vec4(0.0, 0.3, 0.7, 1.0); // НОВИЙ: Колір середньої глибини
+uniform vec4 shallow_color:source_color = vec4(0.0, 0.73, 0.99, 1.0);
+
+uniform float depth_blend_max = 80.0;
+uniform float depth_blend_power = 1.2;
+// Де саме знаходиться проміжний колір (0.5 - рівно посередині)
+uniform float mid_blend_position = 0.5;
 
 
 group_uniforms ShorelineFoam;
@@ -144,14 +154,31 @@ void vertex() {
 		v_ground_height = mix(min_terrain_height, max_terrain_height, norm_h);
 	}
 	
-	// 3. ЗАТУХАННЯ ТА ОПТИМІЗАЦІЯ ВЕРШИН
-	if (v_ground_height > 5.0) {
-		displacement = vec3(0.0); // Під землею хвиль немає
+	// 3. АСИМПТОТИЧНЕ ЗАТУХАННЯ (М'який накат + Сильний відкат)
+	if (v_ground_height > 5.5) {
+		displacement = vec3(0.0); 
 	} else {
-		float depth_at_vertex = 5.0 - v_ground_height;
-		float wave_damp = smoothstep(0.0, shore_wave_damp_distance, depth_at_vertex);
-		wave_damp = max(0.15, wave_damp); 
-		displacement.y *= wave_damp;
+		float depth_at_vertex = max(0.0, 5.0 - v_ground_height);
+		float linear_damp = clamp(depth_at_vertex / shore_wave_damp_distance, 0.0, 1.0);
+		
+		// Базове затухання
+		float wave_damp_y = pow(linear_damp, 1.5); 
+		float wave_damp_xz = pow(linear_damp, 1.2); 
+		
+		// === ДИНАМІКА НАКАТУ ТА ВІДКАТУ ===
+		float horizontal_modifier = 1.0;
+		
+		if (displacement.y < 0.0) {
+			// ВІДКАТ (Впадина): вода відтягується назад. Підсилюємо всмоктування в море.
+			horizontal_modifier = mix(2.5, 1.0, linear_damp); 
+		} else {
+			// НАКАТ (Гребінь): вода суне на берег. 
+			// Чим ближче до берега (linear_damp -> 0), тим сильніше ми "гальмуємо" її горизонтальний рух.
+			horizontal_modifier = mix(0.3, 1.0, linear_damp); 
+		}
+		
+		displacement.y *= max(0.05, wave_damp_y);
+		displacement.xz *= max(0.01, wave_damp_xz * horizontal_modifier);
 	}
 	// -----------------------------
 	
@@ -176,8 +203,8 @@ void vertex() {
 
 void fragment() {
 	// ЖОРСТКА ОПТИМІЗАЦІЯ: не малювати воду, якщо вона під землею!
-	// 5.2 дає запас у 20 см, щоб піна на самому березі не обрізалась
-	if (v_ground_height > 5.2) {
+	// ЗБІЛЬШИВ ЗАПАС ДО 6.0: Це дозволяє воді "зайти" в пісок, щоб ми мали місце для м'якого розмиття краю!
+	if (v_ground_height > 6.0) {
 		discard;
 	}
 	
@@ -185,48 +212,105 @@ void fragment() {
 	float fresnel_factor = clamp(pow(abs(1.0 - dot(NORMAL, normalize(VIEW))), fresnel_power), -1.0, 1.0);
 	float fresnel = fresnel_factor * fresnel_strength + fresnel_offset;
 	
-	// РОЗРАХУНОК РЕАЛЬНОЇ ГЛИБИНИ ВОДИ (Товщина шару води)
-	float depth = texture(depth_texture, SCREEN_UV).r;
-	vec3 ndc = vec3(SCREEN_UV * 2.0 - 1.0, depth);
+	// РОЗРАХУНОК РЕАЛЬНОЇ ГЛИБИНИ ВОДИ
+	// 1. КООРДИНАТИ ТА ГЛИБИНА
+	float depth_raw = texture(depth_texture, SCREEN_UV).r;
+	vec3 ndc = vec3(SCREEN_UV * 2.0 - 1.0, depth_raw);
 	vec4 view = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
 	view.xyz /= view.w;
 	
-	float linear_depth = -view.z; // Глибина до дна
-	float water_depth = -VERTEX.z; // Глибина до поверхні води
-	float depth_difference = max(0.0, linear_depth - water_depth); // Фактична товщина води!
+	float linear_depth = -view.z; 
+	float water_depth = -VERTEX.z; 
+	float depth_difference = max(0.0, linear_depth - water_depth);
 	
-	float linear_dist = length(world_vertex - CAMERA_POSITION_WORLD);
+	// Світові координати дна та стабільна вертикальна глибина
+	vec4 world_ground_pos = INV_VIEW_MATRIX * vec4(view.xyz, 1.0);
+	float vertical_depth = max(0.0, world_vertex.y - world_ground_pos.y);
 	
-	// 6. ПОЛІНОМІАЛЬНИЙ СПУСК ТА ГРАДІЄНТ КОЛЬОРУ
-	// Використовуємо pow() для різкого переходу (графік поліному)
-	float depth_blend_factor = clamp(depth_difference / depth_blend_max, 0.0, 1.0);
-	depth_blend_factor = pow(depth_blend_factor, depth_blend_power); 
-	
-	// Отримуємо зображення дна (рефракція)
+	// Рефракція
 	float refraction_factor = clamp(depth_difference * refraction_depth_factor, refraction_factor_min, refraction_factor_max);
 	vec2 refracted_uv = SCREEN_UV - NORMAL.xz * refraction_factor;
 	vec3 refracted_bg = textureLod(screen_texture, refracted_uv, 0.0).rgb;
 	
-	// 4. ЛАЗУРНИЙ ПЕРЕЛИВ (без ефекту брудного скла)
-	// Спочатку змішуємо колір мілини та глибини
-	vec3 base_water_color = mix(shallow_color.rgb, deep_color.rgb, depth_blend_factor);
+	// ========================================================
+	// === КАУСТИКА (ЖОРСТКО НА ДНІ) ===
+	// ========================================================
+	vec3 world_normal = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
 	
-	// Визначаємо, наскільки вода перекриває дно. Навіть на нулі вона має 40% кольору
-	float opacity_blend = clamp(depth_difference * 0.5, 0.4, 1.0); 
+	// ВИКОРИСТОВУЄМО world_ground_pos (координати піску)
+	vec2 base_caustic_uv = world_ground_pos.xz * caustic_scale;
+	vec2 distorted_uv = base_caustic_uv + (world_normal.xz * 2.5);
 	
-	// Фінальний колір води (дно + лазур + відбиття)
-	vec3 water_color = mix(refracted_bg, base_water_color, opacity_blend) * (1.0 - fresnel);
+	float caustic_r = texture(caustic_texture, distorted_uv + vec2(0.005, 0.0)).r;
+	float caustic_g = texture(caustic_texture, distorted_uv).g;
+	float caustic_b = texture(caustic_texture, distorted_uv - vec2(0.005, 0.0)).b;
+	vec3 caustic_color = vec3(caustic_r, caustic_g, caustic_b) * caustic_strength;
 	
-	// Fresnel Shading (Додаємо небо)
+	// Сонячні зайчики від хвиль
+	float light_focus = smoothstep(0.8, 1.0, world_normal.y);
+	caustic_color += caustic_color * light_focus * 1.5;
+	
+	// Каустика зникає на глибині більше 15 метрів (залежить від вертикалі)
+	float caustic_fade = smoothstep(15.0, 0.0, vertical_depth);
+	vec3 lit_bottom = refracted_bg + (caustic_color * caustic_fade);
+
+	// ========================================================
+	// === ОБ'ЄМНЕ ПОГЛИНАННЯ ТА IN-SCATTERING ===
+	// ========================================================
+	vec3 absorption_coeff = vec3(1.2, 0.5, 0.1); 
+	vec3 transmittance = exp(-absorption_coeff * vertical_depth);
+	vec3 underwater_scene = lit_bottom * transmittance;
+	
+	float volume_blend = clamp(vertical_depth / depth_blend_max, 0.0, 1.0);
+	volume_blend = pow(volume_blend, depth_blend_power);
+	
+	float t1 = clamp(volume_blend / mid_blend_position, 0.0, 1.0);
+	float t2 = clamp((volume_blend - mid_blend_position) / (1.0 - mid_blend_position), 0.0, 1.0);
+	vec3 water_volume_color = mix(mix(shallow_color.rgb, mid_color.rgb, t1), deep_color.rgb, t2);
+	
+	// Базовий колір води до застосування неба та HDR
+	vec3 base_water_color = underwater_scene + (water_volume_color * (1.0 - transmittance));
+
+	// HDR Корекція та Небо
+	float sky_brightness = max(fresnel_sky_color.r, max(fresnel_sky_color.g, fresnel_sky_color.b));
 	vec3 sky = fresnel_sky_color.rgb * fresnel;
-	vec3 water = water_color * fresnel_sky_color.rgb;
-	water_color = HDR(sky + water, fresnel_exposure);
+	vec3 water = base_water_color * sky_brightness;
 	
-	// Баранці (Оригінальний код)
+	// ЗАСТОСОВУЄМО HDR ДО ВОДИ
+	vec3 final_water_color = HDR(sky + water, fresnel_exposure);
+
+	// ========================================================
+	// === ФЕЙКОВІ ПРОМЕНІ СВІТЛА (GOD RAYS 2.0 - ОБ'ЄМНІ) ===
+	// ========================================================
+	// 1. Беремо 3D-центр товщі води. Це дасть ефект паралаксу (справжнього об'єму)
+	vec3 ray_pos = mix(world_vertex, world_ground_pos.xyz, 0.5);
+	
+	// 2. Рух променів
+	vec2 ray_uv = ray_pos.xz * (caustic_scale * 0.3) + vec2(TIME * 0.02);
+	
+	// 3. Зчитуємо шум
+	float ray_noise = texture(caustic_texture, ray_uv).r;
+	
+	// 4. МАГІЯ ВИДИМОСТІ: smoothstep створює шалений контраст.
+	// Відсікаємо все тьмяне (від 0.0 до 0.6), залишаємо лише яскраві "лазерні" пучки.
+	ray_noise = smoothstep(0.6, 0.95, ray_noise);
+	
+	// 5. Сила залежить від товщі води. На мілині їх нема, на глибині - вони потужні.
+	float ray_volume_mask = clamp(vertical_depth * 0.15, 0.0, 1.0);
+	
+	// 6. Формуємо промені (Множник 5.0 - щоб вони світилися як неонові стовпи)
+	vec3 god_rays = shallow_color.rgb * ray_noise * ray_volume_mask * 5.0;
+	
+	// ВАЖЛИВО: Додаємо промені ПІСЛЯ HDR! Інакше функція HDR знову стисне їхню яскравість у нуль.
+	final_water_color += god_rays;
+
+	// ========================================================
+	// === ПІНА ТА ФІНАЛЬНИЙ ALBEDO ===
+	// ========================================================
 	float base_foam_mix = clamp((-jacobian_determinant + foam_jacobian_limit) * foam_coverage, 0.0, 1.0);
 	base_foam_mix = (base_foam_mix * base_foam_mix) * foam_mix_strength;
 	
-	// БЕРЕГОВА ПІНА (Shoreline Foam)
+	// БЕРЕГОВА ПІНА
 	float shore_noise = texture(foam_texture, world_vertex.xz * 0.05 + vec2(TIME * 0.03, TIME * 0.015)).r;
 	float shore_mask = smoothstep(shoreline_foam_cutoff, 0.0, depth_difference);
 	shore_mask = smoothstep(0.4, 0.7, shore_mask * shore_noise * shoreline_foam_intensity);
@@ -236,17 +320,21 @@ void fragment() {
 	vec3 base_foam_tex = texture(foam_texture, world_vertex.xz * uv_scale).rgb;
 	vec3 final_foam_color = mix(base_foam_tex, shoreline_foam_color.rgb, shore_mask);
 
-	ALBEDO = mix(water_color, final_foam_color, foam_mix_factor);
+	// Фінальний вивід кольору
+	ALBEDO = mix(final_water_color, final_foam_color, foam_mix_factor);
 	foam_specular_factor = (1.0 - foam_mix_factor);
 	
 	// СПРАВЖНЯ ПРОЗОРІСТЬ (Depth Alpha)
-	// Використовуємо поліноміальний фактор, щоб прозорість зникала красивіше
 	float depth_alpha = smoothstep(0.0, depth_blend_max * 0.5, depth_difference);
 	
-	// ВАЖЛИВО: Піна має залишатися непрозорою, навіть на нульовій глибині
-	float final_water_alpha = max(depth_alpha, foam_mix_factor);
+	// === НОВЕ: М'ЯКИЙ КРАЙ БЕРЕГА ===
+	float edge_fade = smoothstep(0.0, 0.4, depth_difference);
+	
+	// Піна плавно розчиняється в піску на останніх 40 сантиметрах.
+	float final_water_alpha = max(depth_alpha, foam_mix_factor) * edge_fade;
 	
 	// Distance Fade (затухання океану вдалині на горизонті)
+	float linear_dist = length(world_vertex - CAMERA_POSITION_WORLD);
 	float fade_start = view_distance_max * view_fade_start;
 	float dist_alpha = 1.0 - (clamp(linear_dist, fade_start, view_distance_max) - fade_start) / (view_distance_max - fade_start);
 	
@@ -259,11 +347,6 @@ void fragment() {
 	SPECULAR = pbr_specular_strength * foam_specular_factor * fresnel_factor + pbr_specular_offset;
 	
 	wave_height = world_vertex.y;
-	
-	// РЕЖИМ ДЕБАГУ: Фарбуємо мілководдя в червоний колір
-	if (v_ground_height > -5.0) {
-		ALBEDO = vec3(1.0, 0.0, 0.0);
-	}
 }
 
 

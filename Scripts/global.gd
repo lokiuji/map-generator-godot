@@ -5,6 +5,7 @@ var world_seed: int = 777
 var custom_spawn_x: float = 0.0
 var custom_spawn_z: float = 0.0
 var world_offset: Vector2 = Vector2.ZERO
+
 var elevation_noise = FastNoiseLite.new()
 var mountain_noise = FastNoiseLite.new()
 var moisture_noise = FastNoiseLite.new()
@@ -13,6 +14,8 @@ var continent_noise = FastNoiseLite.new()
 var chunk_modifications = {}
 var rock_detail_noise = FastNoiseLite.new()
 
+# НОВИЙ ШУМ ДЛЯ БЕРЕГІВ
+var cliff_noise = FastNoiseLite.new() 
 
 
 func _ready():
@@ -74,28 +77,18 @@ func _setup_noises():
 	moisture_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	moisture_noise.seed = world_seed + 999
 	moisture_noise.frequency = 0.0005
-	elevation_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	elevation_noise.seed = world_seed
-	elevation_noise.frequency = 0.00045 
-	elevation_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	elevation_noise.fractal_octaves = 5
-	
-	mountain_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	mountain_noise.seed = world_seed + 333
-	mountain_noise.frequency = 0.002
-	mountain_noise.fractal_type = FastNoiseLite.FRACTAL_RIDGED
-	mountain_noise.fractal_octaves = 5
 
-	moisture_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	moisture_noise.seed = world_seed + 999
-	moisture_noise.frequency = 0.0005
-
-	# НОВИЙ ШУМ ДЛЯ КОНТИНЕНТІВ (як у відео)
+	# ШУМ ДЛЯ КОНТИНЕНТІВ (як у відео)
 	continent_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	continent_noise.seed = world_seed + 123
 	continent_noise.frequency = 0.000015 # Дуже низька частота створює величезні материки
 	continent_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
 	continent_noise.fractal_octaves = 4
+	
+	# НАЛАШТУВАННЯ ШУМУ БЕРЕГІВ
+	cliff_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	cliff_noise.seed = world_seed + 777
+	cliff_noise.frequency = 0.001
 
 func _generate_continent_layout():
 	continents.clear()
@@ -144,7 +137,6 @@ func get_falloff(world_x: float, world_z: float) -> float:
 		var t = clamp(dist / c.radius, 0.0, 1.0)
 		
 		# РОЗШИРЮЄМО СУХОДІЛ:
-		# Раніше було (0.4, 0.9). 
 		# Тепер берег починає спускатися аж на 65% віддаленості від центру (0.65),
 		# і повністю йде під воду лише за межами базового радіусу (1.1).
 		var f = smoothstep(0.65, 1.1, t)
@@ -211,7 +203,8 @@ func get_biome_data(x: float, z: float) -> Dictionary:
 
 	return {"elevation": e, "moisture": m, "biome": b, "color": c, "is_grassy": is_g}
 
-# Оновлена функція висоти з гідравлічною ерозією у global.gd
+# Оновлена функція висоти з гідравлічною ерозією та динамічними берегами
+# Оновлена функція висоти з динамічними берегами (Логарифмічний шельф)
 func _get_final_height(world_x: float, world_z: float) -> float:
 	# 1. ЗАХИСТ ВІД ФАНТОМНИХ ПЛЯЖІВ (Зациклюємо світ кожні 100 км)
 	var safe_x = wrapf(world_x, -100000.0, 100000.0)
@@ -219,10 +212,27 @@ func _get_final_height(world_x: float, world_z: float) -> float:
 	
 	var e = get_raw_elevation(safe_x, safe_z)
 	
-	# 2. РОБИМО СПРАВЖНЄ ДНО: плавно опускаємося від 5.0 (берег) до -80.0 (безодня)
+	# 2. ДИНАМІЧНИЙ БЕРЕГ ТА ДНО (Експоненційна плавність)
 	if e < 0.35: 
-		return lerp(-80.0, 5.0, e / 0.35)
+		# Відстань ВІД берега: 0.0 - це самий стик з сушею, 1.0 - відкритий океан
+		var dist_from_shore = 1.0 - (e / 0.35)
+		
+		# Читаємо шум берега (0.0 - пологий пляж, 1.0 - скала/кліф)
+		var cliff_val = (_get_seamless_noise(cliff_noise, safe_x, safe_z) + 1.0) / 2.0
+		
+		# МАГІЯ ГЛАДКОСТІ (Усунення сходинки):
+		# Якщо cliff_val = 0.0 (пляж), беремо 4.0. pow(x, 4.0) дуже довго лежить біля нуля.
+		# Це створює довгу мілину, ідеально зшиту з сушею без жодного кута.
+		# Якщо cliff_val = 1.0 (скала), беремо 0.3. pow(x, 0.3) миттєво падає вниз.
+		var curve_power = lerp(4.0, 0.3, cliff_val)
+		
+		# Обчислюємо коефіцієнт падіння дна
+		var drop_factor = pow(dist_from_shore, curve_power)
+		
+		# 5.0 - висота стику з сушею, -200.0 - безодня
+		return lerp(5.0, -200.0, drop_factor)
 	
+	# 3. ЛОГІКА СУШІ
 	var land = pow(e - 0.35, 1.2) * 150.0
 	var ridge = smoothstep(0.4, 0.85, e)
 	
