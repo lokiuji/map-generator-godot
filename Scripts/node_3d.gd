@@ -56,15 +56,20 @@ func _find_valid_spawn_point():
 	var rng = RandomNumberGenerator.new()
 	rng.seed = Global.world_seed 
 	var start_pos = Vector2.ZERO
-	if Global.continents.size() > 0: start_pos = Global.continents[0].pos
+	
+	# ВИПРАВЛЕННЯ: Тепер ми звертаємося до base_pos замість pos
+	if Global.continents.size() > 0: 
+		start_pos = Global.continents[0].base_pos
+		
 	for i in range(200):
 		var rx = start_pos.x + rng.randf_range(-1500, 1500)
 		var rz = start_pos.y + rng.randf_range(-1500, 1500)
 		if Global.get_raw_elevation(rx, rz) > 0.5: 
 			Global.world_offset = Vector2(rx, rz)
 			return
+			
 	Global.world_offset = start_pos
-
+	
 func _process(_delta):
 	# Оновлюємо показники на екрані
 	if player:

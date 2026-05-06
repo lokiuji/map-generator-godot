@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://cfsshsf6nxl0e"]
+
+[ext_resource type="Script" uid="uid://c7217o6be3r7i" path="res://map_exporter.gd" id="1_qhe08"]
+
+[node name="MapExporter" type="Control" unique_id=1412251852]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_qhe08")

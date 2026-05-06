@@ -7,10 +7,13 @@ uniform sampler2D terrain_color_texture : source_color, filter_linear_mipmap, re
 
 group_uniforms Wind;
 uniform float wind_speed = 0.5;
-uniform float wind_strength = 0.3;
-uniform float wind_brightness_mult = 0.4;
+uniform float wind_strength = 0.3; // Відхилення вершин (діє тільки зблизька)
+uniform float wind_brightness_mult = 0.4; // Світлові хвилі (діють всюди)
 
-group_uniforms LOD;
+group_uniforms LOD_System;
+uniform float anim_distance = 25.0; // Дистанція, де фізичний рух плавно зупиняється
+uniform float density_drop_distance = 50.0; // Дистанція, після якої трава починає рідшати
+uniform float min_density = 0.15; // Скільки трави залишається на горизонті (0.15 = 15%)
 uniform float fade_start = 120.0; 
 uniform float fade_end = 150.0;
 
@@ -18,12 +21,13 @@ group_uniforms Terrain_Sync;
 uniform float terrain_uv_scale = 0.2;
 uniform float biome_tint_strength = 0.8;
 uniform float global_brightness : hint_range(0.5, 3.0, 0.1) = 1.2; 
-// 1. ДОДАЛИ РІВЕНЬ ВОДИ
 uniform float water_level = 4.8; 
 
 varying float wind_val;
 varying vec3 world_pos_var;
 varying float v_grass_mask;
+varying float v_camera_dist;
+varying float v_anim_weight;
 
 vec2 hash2(vec2 p) {
 	return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453);
@@ -76,37 +80,48 @@ void get_material_weights(vec3 w_pos, vec3 w_norm, out float cliff, out float pe
 
 void vertex() {
 	world_pos_var = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	v_camera_dist = distance(world_pos_var, CAMERA_POSITION_WORLD);
+	
+	// --- LOD 1: ДИНАМІЧНА ЩІЛЬНІСТЬ ---
+	// Якщо ми далі за density_drop_distance, щільність плавно падає від 1.0 до min_density
+	float current_density = mix(1.0, min_density, smoothstep(density_drop_distance, fade_start, v_camera_dist));
+	float instance_hash = hash2(world_pos_var.xz * 100.0).x;
+	
+	// Якщо випадкове число більше за поточну дозволену щільність - ховаємо травинку
+	if (instance_hash > current_density) {
+		VERTEX = vec3(0.0);
+	}
 	
 	vec3 terrain_normal = normalize(INSTANCE_CUSTOM.rgb * 2.0 - 1.0);
-	
 	float c, p, s, d, g;
 	get_material_weights(world_pos_var, terrain_normal, c, p, s, d, g);
 	
 	float snow = smoothstep(100.0, 130.0, world_pos_var.y);
 	v_grass_mask = g * (1.0 - snow);
 
-	float dist = distance(world_pos_var, CAMERA_POSITION_WORLD);
-	float lod_scale = 1.0 - smoothstep(fade_start, fade_end, dist);
+	float lod_scale = 1.0 - smoothstep(fade_start, fade_end, v_camera_dist);
 	float pop_scale = smoothstep(0.01, 0.5, v_grass_mask);
 	
 	VERTEX *= lod_scale * pop_scale; 
 
-	// 2. ЖОРСТКА ПЕРЕВІРКА ВОДИ ТУТ
-	// Якщо трава нижча за воду — стискаємо її у крапку.
 	if (world_pos_var.y < water_level) {
 		VERTEX = vec3(0.0);
 	}
 
+	// --- ШУМ ВІТРУ ---
 	vec2 noise_uv = (world_pos_var.xz * 0.02) + (vec2(1.0, 0.5) * TIME * wind_speed);
 	wind_val = texture(wind_noise, noise_uv).r;
 	
+	// --- LOD 2: АНІМАЦІЯ РУХУ (тільки зблизька) ---
+	// Вага анімації падає до 0, коли дистанція досягає anim_distance
+	v_anim_weight = 1.0 - smoothstep(anim_distance * 0.7, anim_distance, v_camera_dist);
+	
 	float height_factor = max(0.0, VERTEX.y); 
-	VERTEX.x += wind_val * wind_strength * height_factor * lod_scale * pop_scale;
-	VERTEX.z += wind_val * wind_strength * 0.5 * height_factor * lod_scale * pop_scale;
+	VERTEX.x += wind_val * wind_strength * height_factor * v_anim_weight;
+	VERTEX.z += wind_val * wind_strength * 0.5 * height_factor * v_anim_weight;
 }
 
 void fragment() {
-	// Додатково відсікаємо рендеринг під водою для 100% гарантії
 	if (v_grass_mask < 0.01 || world_pos_var.y < water_level) discard; 
 
 	vec4 tex = texture(alpha_texture, UV);
@@ -120,14 +135,21 @@ void fragment() {
 	vec3 actual_ground_color = ground_tex_color * tint;
 	
 	float tip_mask = pow(1.0 - UV.y, 2.0);
-	vec3 base_color = mix(actual_ground_color * 1.1, actual_ground_color * 1.5, tip_mask);
 	
+	// --- ВИПРАВЛЕННЯ ЗАТЕМНЕННЯ ---
+	// Тепер колір розраховується однаково для всіх дистанцій, 
+	// коріння залишається у своєму кольорі (* 1.0), а кінчики висвітлюються (* 1.5).
+	vec3 base_color = mix(actual_ground_color * 1.0, actual_ground_color * 1.5, tip_mask);
+	
+	// Світлові відблиски від вітру працюють завжди, незалежно від дистанції
 	float wind_shimmer = wind_val * wind_brightness_mult * tip_mask;
 	vec3 final_color = base_color + (vec3(1.0) * wind_shimmer);
 	
 	ALBEDO = clamp(final_color * global_brightness, vec3(0.0), vec3(1.0));
-	ROUGHNESS = 0.8;
-	SPECULAR = 0.0; 
+	
+	// Трава зблизька ловить більше сонячного світла (блищить), вдалині стає матовою
+	ROUGHNESS = mix(0.9, 0.7, v_anim_weight); 
+	SPECULAR = mix(0.0, 0.1, v_anim_weight); 
 	
 	vec3 up_normal = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
 	NORMAL = normalize(mix(NORMAL, up_normal, 0.9));

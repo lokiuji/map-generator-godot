@@ -82,9 +82,11 @@ float get_outcropping_mask(vec2 pos) {
 }
 
 void get_material_weights(vec3 w_pos, vec3 w_norm, out float cliff, out float pebble, out float sand, out float dirt, out float grass) {
+	// 1. Визначаємо крутизну схилу
 	float steepness = 1.0 - dot(w_norm, vec3(0.0, 1.0, 0.0));
 	float outcropping = get_outcropping_mask(w_pos.xz);
 	
+	// 2. Розраховуємо Скелі (Вони мають найвищий пріоритет!)
 	float rock_steep = smoothstep(0.60, 0.61, steepness);
 	float rock_noise = smoothstep(0.75, 0.76, outcropping);
 	cliff = clamp(rock_steep + rock_noise, 0.0, 1.0);
@@ -97,11 +99,12 @@ void get_material_weights(vec3 w_pos, vec3 w_norm, out float cliff, out float pe
 	float dirt_noise = smoothstep(0.55, 0.56, outcropping);
 	float total_dirt = clamp(dirt_steep + dirt_noise, 0.0, 1.0);
 	
-	// Блокування: max(w_pos.y, water_level) гарантує, що все, що нижче води, має значення точно 1.0
+	// 3. Зона біля води[cite: 4]
 	float base_sand_mask = 1.0 - smoothstep(water_level, water_level + 3.0, max(w_pos.y, water_level));
 
-	sand   = clamp(base_sand_mask, 0.0, 1.0);
-	cliff  = clamp(cliff - sand, 0.0, 1.0); 
+	// МАГІЯ ТУТ: Пісок з'являється ТІЛЬКИ там, де немає скель. 
+	// Якщо схил крутий - base_sand_mask перекривається скелею, утворюючи обрив до самої води!
+	sand   = clamp(base_sand_mask - cliff, 0.0, 1.0); 
 	pebble = clamp(total_pebble - cliff - sand, 0.0, 1.0);
 	dirt   = clamp(total_dirt - cliff - sand - pebble, 0.0, 1.0);
 	grass  = clamp(1.0 - cliff - sand - pebble - dirt, 0.0, 1.0); 
@@ -154,11 +157,19 @@ void fragment() {
 	w = pow(w, vec3(8.0));
 	vec3 tri_w = w / (w.x + w.y + w.z);
 
+	// --- 1. БАЗОВА ТЕКСТУРА СКЕЛЬ ---
 	vec2 r_x = w_pos.zy * rock_scale; vec2 r_y = w_pos.xz * rock_scale; vec2 r_z = w_pos.xy * rock_scale;
 	vec3 cliff_alb = texture(rock_albedo, r_x).rgb * tri_w.x + texture(rock_albedo, r_y).rgb * tri_w.y + texture(rock_albedo, r_z).rgb * tri_w.z;
 	vec3 cliff_nrm = texture(rock_normal, r_x).rgb * tri_w.x + texture(rock_normal, r_y).rgb * tri_w.y + texture(rock_normal, r_z).rgb * tri_w.z;
 	vec3 cliff_orm = texture(rock_orm, r_x).rgb * tri_w.x + texture(rock_orm, r_y).rgb * tri_w.y + texture(rock_orm, r_z).rgb * tri_w.z;
 
+	if (w_cliff > 0.0) {
+		// Залишаємо лише легке затемнення каміння ближче до рівня води (бруд/волога)
+		float dirt_gradient = 1.0 - smoothstep(water_level, water_level + 40.0, w_pos.y);
+		cliff_alb = mix(cliff_alb, cliff_alb * 0.5, dirt_gradient * 0.5);
+	}
+
+	// --- 2. ІНШІ МАТЕРІАЛИ ---
 	vec2 p_uv = w_pos.xz * pebble_scale;
 	vec3 p_alb = texture(pebble_albedo, p_uv).rgb;
 	vec3 p_nrm = texture(pebble_normal, p_uv).rgb;
@@ -179,6 +190,7 @@ void fragment() {
 	vec3 s_nrm = texture(sand_normal, s_uv).rgb;
 	vec3 s_orm_tex = texture(sand_orm, s_uv).rgb;
 
+	// --- 3. ЗМІШУВАННЯ ТА ФІНАЛІЗАЦІЯ ---
 	vec3 tint = mix(vec3(1.0), COLOR.rgb, biome_tint_strength);
 	p_alb *= tint;
 	g_alb *= tint;
